@@ -76,7 +76,7 @@ services:
     image: ghcr.io/hasasiero/animeunity-downloader:latest
     container_name: animeunity-downloader
     ports:
-      - "8080:8000"
+      - "8010:8000"
     volumes:
       - animeunity-data:/data
       - ~/Downloads/Anime:/downloads
@@ -92,7 +92,7 @@ volumes:
 docker compose up -d
 ```
 
-Open **http://localhost:8080** and start searching.
+Open **http://localhost:8010** and start searching.
 
 ---
 
@@ -101,7 +101,7 @@ Open **http://localhost:8080** and start searching.
 ```bash
 docker run -d \
   --name animeunity-downloader \
-  -p 8080:8000 \
+  -p 8010:8000 \
   -v animeunity-data:/data \
   -v ~/Downloads/Anime:/downloads \
   -e MAX_CONCURRENT_DOWNLOADS=2 \
@@ -130,7 +130,7 @@ All configuration is done via environment variables:
 | `DOWNLOAD_PATH` | Host path where anime files are saved | `~/Downloads/AnimeUnity` | No |
 | `MAX_CONCURRENT_DOWNLOADS` | Parallel downloads (1-5) | `2` | No |
 | `LOG_LEVEL` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | `INFO` | No |
-| `PORT` | Host port to expose the web UI | `8080` | No |
+| `PORT` | Host port to expose the web UI | `8010` | No |
 
 ### Volumes
 
