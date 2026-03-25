@@ -18,13 +18,17 @@
 
 <br />
 
-<!--
-  SCREENSHOT: Replace this comment with a screenshot of the app.
-  Example:
-  <p align="center">
-    <img src="docs/screenshots/search.png" width="800" alt="Search page" />
-  </p>
--->
+<p align="center">
+  <img src="docs/screenshots/home.png" width="800" alt="Homepage with currently airing anime" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/search.png" width="800" alt="Search results with filters" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/detail.png" width="800" alt="Anime detail page with episodes" />
+</p>
 
 ---
 
@@ -151,14 +155,14 @@ The container includes a built-in health check at `/api/health` that runs every 
               │ REST API             │ WebSocket
               ▼                      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                     FastAPI (Uvicorn)                        │
+│                     FastAPI (Uvicorn)                       │
 │                                                             │
-│  ┌──────────┐  ┌────────────┐  ┌──────────┐  ┌──────────┐  │
-│  │  Search   │  │   Anime    │  │ Download │  │ Settings │  │
-│  │  Service  │  │  Service   │  │  Service │  │ Service  │  │
-│  └────┬─────┘  └─────┬──────┘  └────┬─────┘  └────┬─────┘  │
-│       │              │              │              │         │
-│       ▼              ▼              ▼              ▼         │
+│  ┌──────────┐  ┌────────────┐  ┌──────────┐  ┌──────────┐   │
+│  │  Search  │  │   Anime    │  │ Download │  │ Settings │   │
+│  │  Service │  │  Service   │  │  Service │  │ Service  │   │
+│  └────┬─────┘  └─────┬──────┘  └────┬─────┘  └────┬─────┘   │
+│       │              │              │             │         │
+│       ▼              ▼              ▼             ▼         │
 │  ┌─────────────────────────┐  ┌──────────────────────────┐  │
 │  │   AnimeUnity Client     │  │     SQLite (aiosqlite)   │  │
 │  │  (curl-cffi + TLS imp.) │  │     via SQLAlchemy ORM   │  │
