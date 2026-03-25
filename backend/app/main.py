@@ -1,0 +1,112 @@
+import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+
+from .config import settings
+from .database import async_session, init_db
+from .services.animeunity_client import AnimeUnityClient
+from .services.anime_service import AnimeService
+from .services.download_service import DownloadService
+from .services.extractor_service import ExtractorService
+from .services.metadata_service import MetadataService
+from .services.search_service import SearchService
+from .services.settings_service import SettingsService
+from .services.ws_manager import WebSocketManager
+from .api.router import api_router
+
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper()),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# Resolve static dir
+STATIC_DIR = Path(settings.static_dir)
+if not STATIC_DIR.is_absolute():
+    STATIC_DIR = Path.cwd() / STATIC_DIR
+STATIC_EXISTS = STATIC_DIR.is_dir()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Starting AnimeUnity Downloader...")
+
+    await init_db()
+    logger.info("Database initialized")
+
+    download_dir = Path(settings.download_dir)
+    download_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create services and store in app.state for dependency injection
+    client = AnimeUnityClient()
+    ws_manager = WebSocketManager()
+    extractor = ExtractorService(client)
+    metadata_svc = MetadataService(client)
+
+    app.state.search_service = SearchService(client)
+    app.state.anime_service = AnimeService(client)
+    app.state.settings_service = SettingsService(async_session)
+    app.state.ws_manager = ws_manager
+    app.state.db_session_factory = async_session
+
+    download_service = DownloadService(
+        db_session_factory=async_session,
+        client=client,
+        extractor=extractor,
+        metadata_service=metadata_svc,
+        ws_manager=ws_manager,
+        download_dir=download_dir,
+        max_concurrent=settings.max_concurrent_downloads,
+    )
+    app.state.download_service = download_service
+    download_service.start()
+
+    logger.info("Ready — UI at http://0.0.0.0:8000")
+    yield
+
+    # Cleanup
+    await download_service.stop()
+    await client.close()
+    logger.info("Stopped")
+
+
+# ── Create app ──
+app = FastAPI(
+    title="AnimeUnity Downloader",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── Mount API routes at module level ──
+app.include_router(api_router)
+
+
+# ── Health check ──
+@app.get("/api/health")
+async def health():
+    return {"status": "ok"}
+
+
+# ── SPA fallback: serve frontend for non-API routes ──
+if STATIC_EXISTS:
+    @app.get("/{full_path:path}")
+    async def serve_spa(request: Request, full_path: str):
+        file_path = STATIC_DIR / full_path
+        if full_path and file_path.is_file():
+            return FileResponse(file_path)
+        index = STATIC_DIR / "index.html"
+        if index.is_file():
+            return FileResponse(index)
+        return JSONResponse({"detail": "Not found"}, status_code=404)

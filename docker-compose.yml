@@ -1,0 +1,20 @@
+services:
+  animeunity:
+    build: .
+    container_name: animeunity-downloader
+    ports:
+      - "${PORT:-8080}:8000"
+    volumes:
+      - animeunity-data:/data
+      - ${DOWNLOAD_PATH:-${HOME}/Downloads/AnimeUnity}:/downloads
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////data/animeunity.db
+      - DOWNLOAD_DIR=/downloads
+      - HOST_DOWNLOAD_PATH=${DOWNLOAD_PATH:-${HOME}/Downloads/AnimeUnity}
+      - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-2}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - STATIC_DIR=/app/static
+    restart: unless-stopped
+
+volumes:
+  animeunity-data:

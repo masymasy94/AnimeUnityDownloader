@@ -1,0 +1,13 @@
+.git
+.gitignore
+.idea
+.venv
+.env
+*.md
+data/
+downloads/
+frontend/node_modules/
+frontend/dist/
+__pycache__
+*.pyc
+*.pyo
