@@ -11,10 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ..models.download import Download
 from ..models.setting import Setting
 from ..schemas.download import DownloadRequest
-from .animeunity_client import AnimeUnityClient
 from .download_worker import DownloadWorker
-from .extractor_service import ExtractorService
 from .metadata_service import MetadataService
+from .plex_service import PlexService
+from .providers import ProviderRegistry
 from .ws_manager import WebSocketManager
 
 logger = logging.getLogger(__name__)
@@ -52,17 +52,17 @@ class DownloadService:
     def __init__(
         self,
         db_session_factory: async_sessionmaker[AsyncSession],
-        client: AnimeUnityClient,
-        extractor: ExtractorService,
+        provider_registry: ProviderRegistry,
         metadata_service: MetadataService,
         ws_manager: WebSocketManager,
         download_dir: Path,
         max_concurrent: int = 2,
     ):
         self._db = db_session_factory
-        self._client = client
-        self._worker = DownloadWorker(client, extractor, metadata_service)
+        self._registry = provider_registry
+        self._worker = DownloadWorker(provider_registry, metadata_service)
         self._ws = ws_manager
+        self._plex = PlexService(db_session_factory)
         self._download_dir = download_dir
         self._default_max_concurrent = max_concurrent
         self._active_tasks: dict[int, asyncio.Task] = {}
@@ -101,8 +101,10 @@ class DownloadService:
                     genres=json.dumps(request.genres) if request.genres else None,
                     plot=request.plot,
                     year=request.year,
+                    source_site=request.source_site,
                     episode_id=ep.episode_id,
                     episode_number=ep.episode_number,
+                    episode_title=ep.episode_title,
                     status="queued",
                 )
                 session.add(download)
@@ -190,24 +192,59 @@ class DownloadService:
 
     async def retry_download(self, download_id: int) -> bool:
         async with self._db() as session:
+            download = await session.get(Download, download_id)
+            if not download or download.status not in ("failed", "cancelled"):
+                return False
+            # Delete old files
+            self._cleanup_download_files(download.file_path)
             result = await session.execute(
                 update(Download)
                 .where(Download.id == download_id)
-                .where(Download.status.in_(["failed", "cancelled"]))
                 .values(
                     status="queued",
+                    retry_count=0,
                     progress=0.0,
                     downloaded_bytes=0,
                     total_bytes=0,
                     speed_bps=0,
+                    file_path=None,
                     error_message=None,
-                    retry_count=0,
                     started_at=None,
                     completed_at=None,
                 )
             )
             await session.commit()
             return result.rowcount > 0
+
+    async def retry_all_failed(self) -> int:
+        """Reset all failed downloads to queued and clear retry count."""
+        async with self._db() as session:
+            # First, clean up files for all failed downloads
+            result = await session.execute(
+                select(Download).where(Download.status == "failed")
+            )
+            failed_downloads = list(result.scalars().all())
+            for dl in failed_downloads:
+                self._cleanup_download_files(dl.file_path)
+
+            result = await session.execute(
+                update(Download)
+                .where(Download.status == "failed")
+                .values(
+                    status="queued",
+                    retry_count=0,
+                    progress=0.0,
+                    downloaded_bytes=0,
+                    total_bytes=0,
+                    speed_bps=0,
+                    file_path=None,
+                    error_message=None,
+                    started_at=None,
+                    completed_at=None,
+                )
+            )
+            await session.commit()
+            return result.rowcount
 
     async def delete_download(self, download_id: int) -> bool:
         if download_id in self._active_tasks:
@@ -221,6 +258,24 @@ class DownloadService:
                 await session.commit()
                 return True
             return False
+
+    @staticmethod
+    def _cleanup_download_files(file_path: str | None) -> None:
+        """Remove a download's output file and any partial/raw temp files."""
+        if not file_path:
+            return
+        for path in [
+            Path(file_path),
+            Path(file_path).with_suffix(".mp4.raw"),
+            Path(file_path).with_suffix(".mp4.raw.part"),
+            Path(file_path).with_suffix(".mp4.part"),
+        ]:
+            try:
+                if path.exists():
+                    path.unlink()
+                    logger.info("Cleaned up file: %s", path)
+            except Exception as exc:
+                logger.warning("Failed to clean up %s: %s", path, exc)
 
     def get_disk_usage(self) -> dict:
         """Get disk usage info for the download directory."""
@@ -240,6 +295,22 @@ class DownloadService:
                 "free_bytes": 0,
                 "path": str(self._download_dir),
             }
+
+    async def _maybe_trigger_plex_scan(self) -> None:
+        """Trigger Plex library scan when no more queued/downloading items remain."""
+        try:
+            async with self._db() as session:
+                result = await session.execute(
+                    select(Download).where(
+                        Download.status.in_(["queued", "downloading"])
+                    ).limit(1)
+                )
+                if result.scalars().first() is not None:
+                    return  # Still active downloads
+            if await self._plex.is_configured():
+                await self._plex.trigger_library_scan()
+        except Exception as exc:
+            logger.error("Plex scan trigger failed: %s", exc)
 
     async def _get_max_concurrent(self) -> int:
         """Read max concurrent downloads from DB settings, fallback to default."""
@@ -303,6 +374,7 @@ class DownloadService:
                 "id": download.id,
                 "episode_id": download.episode_id,
                 "episode_number": download.episode_number,
+                "episode_title": download.episode_title,
                 "anime_title": download.anime_title,
                 "anime_slug": download.anime_slug,
                 "cover_url": download.cover_url,
@@ -310,6 +382,7 @@ class DownloadService:
                 "plot": download.plot,
                 "year": download.year,
                 "retry_count": download.retry_count or 0,
+                "source_site": download.source_site,
             }
 
         await self._ws.broadcast({
@@ -354,6 +427,7 @@ class DownloadService:
             file_path = await self._worker.download_episode(
                 episode_id=dl_info["episode_id"],
                 episode_number=dl_info["episode_number"],
+                episode_title=dl_info["episode_title"],
                 anime_title=dl_info["anime_title"],
                 anime_slug=dl_info["anime_slug"],
                 download_dir=self._download_dir,
@@ -362,6 +436,7 @@ class DownloadService:
                 genres=dl_info["genres"],
                 plot=dl_info["plot"],
                 year=dl_info["year"],
+                source_site=dl_info["source_site"],
             )
 
             # Validate that the output file actually exists and is a real video
@@ -393,6 +468,9 @@ class DownloadService:
             })
 
             logger.info("Download completed: %s EP%s", dl_info["anime_title"], dl_info["episode_number"])
+
+            # Trigger Plex scan if queue is now empty
+            await self._maybe_trigger_plex_scan()
 
         except asyncio.CancelledError:
             await _db_execute_with_retry(

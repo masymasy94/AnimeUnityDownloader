@@ -10,6 +10,7 @@ interface EpisodeListProps {
   onDownload: (episode: Episode) => void;
   onDownloadAll: () => void;
   onDownloadRange: (from: number, to: number) => void;
+  onDownloadSelected: (episodes: Episode[]) => void;
   isLoadingMore?: boolean;
 }
 
@@ -21,15 +22,52 @@ export function EpisodeList({
   onDownload,
   onDownloadAll,
   onDownloadRange,
+  onDownloadSelected,
   isLoadingMore,
 }: EpisodeListProps) {
   const [rangeFrom, setRangeFrom] = useState('');
   const [rangeTo, setRangeTo] = useState('');
   const [showRange, setShowRange] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const downloadableEpisodes = episodes.filter(
     (ep) => !ep.download_status || ep.download_status === 'failed',
   );
+
+  const toggleEpisode = (episode: Episode) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(episode.id)) {
+        next.delete(episode.id);
+      } else {
+        next.add(episode.id);
+      }
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    setSelectedIds(new Set(downloadableEpisodes.map((ep) => ep.id)));
+  };
+
+  const deselectAll = () => {
+    setSelectedIds(new Set());
+  };
+
+  const handleDownloadSelected = () => {
+    const selected = episodes.filter((ep) => selectedIds.has(ep.id));
+    if (selected.length > 0) {
+      onDownloadSelected(selected);
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+    }
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
 
   const handleRangeDownload = () => {
     const from = parseInt(rangeFrom);
@@ -49,23 +87,62 @@ export function EpisodeList({
           Episodi ({total})
         </h2>
         <div className="flex gap-2">
-          <button
-            onClick={() => setShowRange((v) => !v)}
-            className={`px-3 py-2 text-sm font-medium rounded-[5px] border transition-colors ${
-              showRange
-                ? 'border-accent text-accent bg-accent/10'
-                : 'border-border text-text-secondary hover:text-text-white hover:bg-bg-hover'
-            }`}
-          >
-            Range
-          </button>
-          {downloadableEpisodes.length > 0 && (
-            <button
-              onClick={onDownloadAll}
-              className="px-4 py-2 text-sm font-medium rounded-[5px] bg-accent text-white hover:bg-accent-hover transition-colors"
-            >
-              Scarica tutti
-            </button>
+          {selectionMode ? (
+            <>
+              <button
+                onClick={selectAll}
+                className="px-3 py-2 text-sm font-medium rounded-[5px] border border-border text-text-secondary hover:text-text-white hover:bg-bg-hover transition-colors"
+              >
+                Seleziona tutti
+              </button>
+              <button
+                onClick={deselectAll}
+                className="px-3 py-2 text-sm font-medium rounded-[5px] border border-border text-text-secondary hover:text-text-white hover:bg-bg-hover transition-colors"
+              >
+                Deseleziona
+              </button>
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={handleDownloadSelected}
+                  className="px-4 py-2 text-sm font-medium rounded-[5px] bg-accent text-white hover:bg-accent-hover transition-colors"
+                >
+                  Scarica selezionati ({selectedIds.size})
+                </button>
+              )}
+              <button
+                onClick={exitSelectionMode}
+                className="px-3 py-2 text-sm font-medium rounded-[5px] border border-border text-text-secondary hover:text-text-white hover:bg-bg-hover transition-colors"
+              >
+                Annulla
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setSelectionMode(true)}
+                className="px-3 py-2 text-sm font-medium rounded-[5px] border border-border text-text-secondary hover:text-text-white hover:bg-bg-hover transition-colors"
+              >
+                Seleziona
+              </button>
+              <button
+                onClick={() => setShowRange((v) => !v)}
+                className={`px-3 py-2 text-sm font-medium rounded-[5px] border transition-colors ${
+                  showRange
+                    ? 'border-accent text-accent bg-accent/10'
+                    : 'border-border text-text-secondary hover:text-text-white hover:bg-bg-hover'
+                }`}
+              >
+                Range
+              </button>
+              {downloadableEpisodes.length > 0 && (
+                <button
+                  onClick={onDownloadAll}
+                  className="px-4 py-2 text-sm font-medium rounded-[5px] bg-accent text-white hover:bg-accent-hover transition-colors"
+                >
+                  Scarica tutti
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -105,7 +182,14 @@ export function EpisodeList({
 
       <div className="bg-bg-secondary rounded-[5px] border border-border overflow-hidden">
         {episodes.map((ep) => (
-          <EpisodeRow key={ep.id} episode={ep} onDownload={onDownload} />
+          <EpisodeRow
+            key={ep.id}
+            episode={ep}
+            onDownload={onDownload}
+            selectionMode={selectionMode}
+            selected={selectedIds.has(ep.id)}
+            onToggle={toggleEpisode}
+          />
         ))}
       </div>
       {hasMore && (

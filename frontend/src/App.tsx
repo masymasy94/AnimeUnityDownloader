@@ -6,6 +6,7 @@ import { SearchPage } from './pages/SearchPage';
 import { AnimeDetailPage } from './pages/AnimeDetailPage';
 import { DownloadsPage } from './pages/DownloadsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { TrackedPage } from './pages/TrackedPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,6 +31,7 @@ function App() {
                 <Route path="/search" element={<SearchPage />} />
                 <Route path="/anime/:animePath" element={<AnimeDetailPage />} />
                 <Route path="/downloads" element={<DownloadsPage />} />
+                <Route path="/tracked" element={<TrackedPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Routes>
             </main>

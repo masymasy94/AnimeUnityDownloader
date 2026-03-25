@@ -3,6 +3,9 @@ import type { Episode } from '../types/anime';
 interface EpisodeRowProps {
   episode: Episode;
   onDownload: (episode: Episode) => void;
+  selectionMode: boolean;
+  selected: boolean;
+  onToggle: (episode: Episode) => void;
 }
 
 function formatViews(n: number): string {
@@ -28,14 +31,26 @@ const STATUS_STYLES: Record<string, { label: string; className: string }> = {
   cancelled: { label: 'Annullato', className: 'bg-text-secondary/20 text-text-secondary' },
 };
 
-export function EpisodeRow({ episode, onDownload }: EpisodeRowProps) {
+export function EpisodeRow({ episode, onDownload, selectionMode, selected, onToggle }: EpisodeRowProps) {
   const status = episode.download_status
     ? STATUS_STYLES[episode.download_status]
     : null;
 
   return (
-    <div className="flex items-center justify-between py-2.5 px-4 border-b border-border/50 hover:bg-bg-hover/50 transition-colors gap-3">
+    <div
+      className={`flex items-center justify-between py-2.5 px-4 border-b border-border/50 hover:bg-bg-hover/50 transition-colors gap-3 ${selectionMode ? 'cursor-pointer' : ''}`}
+      onClick={selectionMode ? () => onToggle(episode) : undefined}
+    >
       <div className="flex items-center gap-3 min-w-0 flex-1">
+        {selectionMode && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggle(episode)}
+            onClick={(e) => e.stopPropagation()}
+            className="w-4 h-4 accent-accent flex-shrink-0 cursor-pointer"
+          />
+        )}
         <span className="text-sm font-mono text-text-secondary w-10 flex-shrink-0 text-right">
           {episode.number}
         </span>

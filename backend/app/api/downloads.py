@@ -91,6 +91,12 @@ async def clear_completed_downloads(svc: DownloadService = Depends(get_download_
     return {"cleared": count}
 
 
+@router.post("/downloads/retry-all-failed")
+async def retry_all_failed(svc: DownloadService = Depends(get_download_service)):
+    count = await svc.retry_all_failed()
+    return {"retried": count}
+
+
 @router.delete("/downloads/{download_id}", status_code=204)
 async def delete_download(
     download_id: int,

@@ -18,8 +18,13 @@ def sanitize_filename(name: str, max_length: int = 200) -> str:
     return name or "unknown"
 
 
-def episode_filename(anime_title: str, episode_number: str, total_episodes: int) -> str:
-    """Generate a clean episode filename like 'Naruto Shippuden/EP001.mp4'."""
+def episode_filename(
+    anime_title: str,
+    episode_number: str,
+    total_episodes: int,
+    episode_title: str | None = None,
+) -> str:
+    """Generate a clean episode filename like 'Naruto Shippuden/EP001 - Titolo.mp4'."""
     folder = sanitize_filename(anime_title)
     # Determine padding based on total episodes
     pad = 3 if total_episodes >= 100 else 2
@@ -29,4 +34,8 @@ def episode_filename(anime_title: str, episode_number: str, total_episodes: int)
         ep_str = f"EP{num:0{pad}d}"
     except (ValueError, TypeError):
         ep_str = f"EP{sanitize_filename(str(episode_number))}"
+
+    if episode_title:
+        title_clean = sanitize_filename(episode_title, max_length=120)
+        return f"{folder}/{ep_str} - {title_clean}.mp4"
     return f"{folder}/{ep_str}.mp4"

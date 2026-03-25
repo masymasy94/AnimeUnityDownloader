@@ -8,7 +8,7 @@ from ..database import Base
 
 class Download(Base):
     __tablename__ = "downloads"
-    __table_args__ = (UniqueConstraint("anime_id", "episode_id"),)
+    __table_args__ = (UniqueConstraint("anime_id", "episode_id", "source_site"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     anime_id: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -18,14 +18,18 @@ class Download(Base):
     genres: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
     plot: Mapped[str | None] = mapped_column(Text, nullable=True)
     year: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_site: Mapped[str] = mapped_column(Text, nullable=False, default="animeunity")
     episode_id: Mapped[int] = mapped_column(Integer, nullable=False)
     episode_number: Mapped[str] = mapped_column(Text, nullable=False)
+    episode_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="queued")
     progress: Mapped[float] = mapped_column(Float, default=0.0)
     downloaded_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
     total_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
     speed_bps: Mapped[int] = mapped_column(BigInteger, default=0)
     file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_retries: Mapped[int] = mapped_column(Integer, default=5)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(

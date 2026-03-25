@@ -2,19 +2,15 @@
 
 from fastapi import Request
 
-from ..services.search_service import SearchService
-from ..services.anime_service import AnimeService
 from ..services.download_service import DownloadService
+from ..services.providers import ProviderRegistry
 from ..services.settings_service import SettingsService
+from ..services.tracker_service import TrackerService
 from ..services.ws_manager import WebSocketManager
 
 
-def get_search_service(request: Request) -> SearchService:
-    return request.app.state.search_service
-
-
-def get_anime_service(request: Request) -> AnimeService:
-    return request.app.state.anime_service
+def get_provider_registry(request: Request) -> ProviderRegistry:
+    return request.app.state.provider_registry
 
 
 def get_download_service(request: Request) -> DownloadService:
@@ -27,6 +23,10 @@ def get_settings_service(request: Request) -> SettingsService:
 
 def get_ws_manager(request: Request) -> WebSocketManager:
     return request.app.state.ws_manager
+
+
+def get_tracker_service(request: Request) -> TrackerService:
+    return request.app.state.tracker_service
 
 
 def get_db_session_factory(request: Request):

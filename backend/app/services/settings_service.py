@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 DEFAULTS = {
     "download_dir": app_settings.download_dir,
     "max_concurrent_downloads": str(app_settings.max_concurrent_downloads),
+    "plex_url": "",
+    "plex_token": "",
+    "plex_library_id": "",
 }
 
 
@@ -30,6 +33,9 @@ class SettingsService:
             download_dir=values["download_dir"],
             host_download_path=app_settings.host_download_path,
             max_concurrent_downloads=int(values["max_concurrent_downloads"]),
+            plex_url=values.get("plex_url", ""),
+            plex_token=values.get("plex_token", ""),
+            plex_library_id=values.get("plex_library_id", ""),
         )
 
     async def update_settings(self, update: SettingsUpdate) -> SettingsResponse:
@@ -42,6 +48,12 @@ class SettingsService:
                     "max_concurrent_downloads",
                     str(update.max_concurrent_downloads),
                 )
+            if update.plex_url is not None:
+                await self._upsert(session, "plex_url", update.plex_url)
+            if update.plex_token is not None:
+                await self._upsert(session, "plex_token", update.plex_token)
+            if update.plex_library_id is not None:
+                await self._upsert(session, "plex_library_id", update.plex_library_id)
             await session.commit()
 
         return await self.get_settings()

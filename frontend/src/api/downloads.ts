@@ -29,6 +29,10 @@ export function retryDownload(id: number): Promise<void> {
   return apiFetch<void>(`/downloads/${id}/retry`, { method: 'POST' });
 }
 
+export function retryAllFailed(): Promise<{ retried: number }> {
+  return apiFetch<{ retried: number }>('/downloads/retry-all-failed', { method: 'POST' });
+}
+
 export interface DiskUsage {
   total_bytes: number;
   used_bytes: number;

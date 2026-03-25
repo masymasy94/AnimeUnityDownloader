@@ -3,12 +3,14 @@ import type { AnimeSearchResult } from '../types/anime';
 
 interface AnimeCardProps {
   anime: AnimeSearchResult;
+  site?: string;
 }
 
-export function AnimeCard({ anime }: AnimeCardProps) {
+export function AnimeCard({ anime, site = 'animeunity' }: AnimeCardProps) {
+  const siteParam = site !== 'animeunity' ? `?site=${site}` : '';
   return (
     <Link
-      to={`/anime/${anime.id}-${anime.slug}`}
+      to={`/anime/${anime.id}-${anime.slug}${siteParam}`}
       className="group block bg-bg-card rounded-[5px] overflow-hidden transition-all hover:shadow-lg hover:shadow-black/30 hover:translate-y-[-2px]"
     >
       <div className="aspect-[3/4] overflow-hidden bg-bg-secondary relative">

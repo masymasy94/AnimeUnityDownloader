@@ -5,9 +5,9 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from .animeunity_client import AnimeUnityClient
-from .extractor_service import ExtractorService, VideoSource
 from .metadata_service import MetadataService
+from .providers import ProviderRegistry
+from .providers.base import VideoSource
 from ..utils.filename import episode_filename
 
 logger = logging.getLogger(__name__)
@@ -22,12 +22,10 @@ class DownloadWorker:
 
     def __init__(
         self,
-        client: AnimeUnityClient,
-        extractor: ExtractorService,
+        provider_registry: ProviderRegistry,
         metadata_service: MetadataService,
     ):
-        self._client = client
-        self._extractor = extractor
+        self._registry = provider_registry
         self._metadata = metadata_service
 
     async def download_episode(
@@ -43,6 +41,8 @@ class DownloadWorker:
         plot: str | None = None,
         year: str | None = None,
         total_episodes: int = 100,
+        source_site: str = "animeunity",
+        episode_title: str | None = None,
     ) -> Path:
         """
         Download a single episode:
@@ -51,22 +51,23 @@ class DownloadWorker:
         3. Embed metadata
         Returns the final file path.
         """
-        # Resolve video URL just-in-time
-        source = await self._extractor.resolve_download_url(episode_id)
+        # Resolve video URL just-in-time via the appropriate site provider
+        provider = self._registry.get(source_site)
+        source = await provider.resolve_download_url(episode_id)
 
         # Determine file path
-        relative_path = episode_filename(anime_title, episode_number, total_episodes)
+        relative_path = episode_filename(anime_title, episode_number, total_episodes, episode_title)
         final_path = download_dir / relative_path
         final_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Download based on source type
         if source.type == "direct_mp4":
             raw_path = final_path.with_suffix(".mp4.raw")
-            await self._download_mp4(source, raw_path, progress_callback)
+            await self._download_mp4(source, raw_path, progress_callback, provider)
         else:
             # M3U8/HLS - download and convert
             raw_path = final_path.with_suffix(".mp4.raw")
-            await self._download_m3u8(source, raw_path, progress_callback)
+            await self._download_m3u8(source, raw_path, progress_callback, provider)
 
         # Embed metadata
         metadata_ok = await self._metadata.embed_metadata(
@@ -94,6 +95,7 @@ class DownloadWorker:
         source: VideoSource,
         dest_path: Path,
         progress_callback: Callable | None,
+        provider=None,
     ) -> None:
         """Download a direct MP4 file with resume support."""
         part_path = dest_path.with_suffix(dest_path.suffix + ".part")
@@ -108,7 +110,7 @@ class DownloadWorker:
         if start_byte > 0:
             headers["Range"] = f"bytes={start_byte}-"
 
-        session = await self._client._ensure_session()
+        session = await provider.get_http_session()
         response = await session.get(source.url, headers=headers, stream=True)
 
         # Validate HTTP response status
@@ -186,12 +188,13 @@ class DownloadWorker:
         source: VideoSource,
         dest_path: Path,
         progress_callback: Callable | None,
+        provider=None,
     ) -> None:
         """Download M3U8/HLS stream and convert to MP4."""
         import m3u8
 
         headers = dict(source.headers) if source.headers else {}
-        session = await self._client._ensure_session()
+        session = await provider.get_http_session()
 
         # Fetch master playlist
         response = await session.get(source.url, headers=headers)

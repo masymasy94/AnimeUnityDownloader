@@ -13,6 +13,8 @@ export interface DownloadStatus {
   file_path: string | null;
   host_file_path: string | null;
   file_exists: boolean;
+  retry_count: number;
+  max_retries: number;
   error_message: string | null;
   created_at: string;
   started_at: string | null;
@@ -27,7 +29,8 @@ export interface DownloadRequest {
   genres: string[];
   plot: string | null;
   year: string | null;
-  episodes: { episode_id: number; episode_number: string }[];
+  source_site?: string;
+  episodes: { episode_id: number; episode_number: string; episode_title?: string | null }[];
 }
 
 export interface DownloadsResponse {

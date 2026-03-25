@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..schemas.anime import SearchResponse
-from ..services.search_service import SearchService
-from .deps import get_search_service
+from ..services.providers import ProviderRegistry
+from .deps import get_provider_registry
 
 router = APIRouter()
 
@@ -10,10 +10,12 @@ router = APIRouter()
 @router.get("/search", response_model=SearchResponse)
 async def search_anime(
     title: str = Query(..., min_length=1),
-    svc: SearchService = Depends(get_search_service),
+    site: str = Query("animeunity"),
+    registry: ProviderRegistry = Depends(get_provider_registry),
 ):
     try:
-        results = await svc.search(title)
+        provider = registry.get(site)
+        results = await provider.search(title)
         return SearchResponse(results=results)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Search failed: {exc}") from exc
@@ -21,10 +23,12 @@ async def search_anime(
 
 @router.get("/latest", response_model=SearchResponse)
 async def latest_anime(
-    svc: SearchService = Depends(get_search_service),
+    site: str = Query("animeunity"),
+    registry: ProviderRegistry = Depends(get_provider_registry),
 ):
     try:
-        results = await svc.get_latest()
+        provider = registry.get(site)
+        results = await provider.get_latest()
         return SearchResponse(results=results)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Latest fetch failed: {exc}") from exc

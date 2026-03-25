@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getDownloads, cancelAllDownloads, clearCompletedDownloads, getDiskUsage } from '../api/downloads';
+import { getDownloads, cancelAllDownloads, clearCompletedDownloads, retryAllFailed, getDiskUsage } from '../api/downloads';
 import { DownloadItem } from '../components/DownloadItem';
 
 type Tab = 'all' | 'active' | 'completed' | 'failed';
@@ -51,6 +51,8 @@ export function DownloadsPage() {
     (d) => d.status === 'completed' || d.status === 'failed' || d.status === 'cancelled',
   );
 
+  const hasFailed = data?.downloads?.some((d) => d.status === 'failed');
+
   const handleCancelAll = async () => {
     await cancelAllDownloads();
     queryClient.invalidateQueries({ queryKey: ['downloads'] });
@@ -58,6 +60,11 @@ export function DownloadsPage() {
 
   const handleClearCompleted = async () => {
     await clearCompletedDownloads();
+    queryClient.invalidateQueries({ queryKey: ['downloads'] });
+  };
+
+  const handleRetryAllFailed = async () => {
+    await retryAllFailed();
     queryClient.invalidateQueries({ queryKey: ['downloads'] });
   };
 
@@ -69,6 +76,14 @@ export function DownloadsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-text-white">Downloads</h1>
         <div className="flex gap-2">
+          {hasFailed && (
+            <button
+              onClick={handleRetryAllFailed}
+              className="px-4 py-2 text-xs font-medium rounded-[5px] bg-accent/10 text-accent hover:bg-accent hover:text-white transition-colors"
+            >
+              Ritenta tutti
+            </button>
+          )}
           {hasFinished && (
             <button
               onClick={handleClearCompleted}

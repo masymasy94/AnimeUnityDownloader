@@ -10,11 +10,17 @@ export function SettingsPage() {
   });
 
   const [maxConcurrent, setMaxConcurrent] = useState(2);
+  const [plexUrl, setPlexUrl] = useState('');
+  const [plexToken, setPlexToken] = useState('');
+  const [plexLibraryId, setPlexLibraryId] = useState('');
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (settings) {
       setMaxConcurrent(settings.max_concurrent_downloads);
+      setPlexUrl(settings.plex_url || '');
+      setPlexToken(settings.plex_token || '');
+      setPlexLibraryId(settings.plex_library_id || '');
     }
   }, [settings]);
 
@@ -30,6 +36,9 @@ export function SettingsPage() {
   const handleSave = () => {
     mutation.mutate({
       max_concurrent_downloads: maxConcurrent,
+      plex_url: plexUrl,
+      plex_token: plexToken,
+      plex_library_id: plexLibraryId,
     });
   };
 
@@ -81,20 +90,73 @@ export function SettingsPage() {
             className="w-32 px-4 py-2.5 bg-bg-primary border border-border rounded-[5px] text-text-white text-sm focus:outline-none focus:border-accent transition-colors"
           />
         </div>
+      </div>
 
-        {/* Save */}
-        <div className="flex items-center gap-3 pt-2">
-          <button
-            onClick={handleSave}
-            disabled={mutation.isPending}
-            className="px-6 py-2.5 bg-accent text-white text-sm font-medium rounded-[5px] hover:bg-accent-hover disabled:opacity-50 transition-colors"
-          >
-            {mutation.isPending ? 'Salvataggio...' : 'Salva'}
-          </button>
-          {saved && (
-            <span className="text-sm text-success font-medium">Salvato!</span>
-          )}
+      {/* Plex Integration */}
+      <div className="bg-bg-secondary border border-border rounded-[5px] p-6 space-y-5">
+        <h2 className="text-lg font-semibold text-text-white">Integrazione Plex</h2>
+        <p className="text-xs text-text-secondary">
+          Configura Plex per avviare automaticamente una scansione della libreria al termine dei download.
+        </p>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-text-white">
+            URL Plex
+          </label>
+          <input
+            type="text"
+            value={plexUrl}
+            onChange={(e) => setPlexUrl(e.target.value)}
+            placeholder="http://192.168.1.100:32400"
+            className="w-full px-4 py-2.5 bg-bg-primary border border-border rounded-[5px] text-text-white text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-text-secondary/50"
+          />
         </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-text-white">
+            Token Plex
+          </label>
+          <input
+            type="password"
+            value={plexToken}
+            onChange={(e) => setPlexToken(e.target.value)}
+            placeholder="Il tuo X-Plex-Token"
+            className="w-full px-4 py-2.5 bg-bg-primary border border-border rounded-[5px] text-text-white text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-text-secondary/50"
+          />
+          <p className="text-[11px] text-text-secondary">
+            Puoi trovarlo nelle impostazioni Plex o negli URL delle richieste del client Plex.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-text-white">
+            ID Libreria (opzionale)
+          </label>
+          <input
+            type="text"
+            value={plexLibraryId}
+            onChange={(e) => setPlexLibraryId(e.target.value)}
+            placeholder="es. 1"
+            className="w-32 px-4 py-2.5 bg-bg-primary border border-border rounded-[5px] text-text-white text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-text-secondary/50"
+          />
+          <p className="text-[11px] text-text-secondary">
+            Se vuoto, viene scansionata tutta la libreria. Specifica l'ID della sezione anime per una scansione mirata.
+          </p>
+        </div>
+      </div>
+
+      {/* Save */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleSave}
+          disabled={mutation.isPending}
+          className="px-6 py-2.5 bg-accent text-white text-sm font-medium rounded-[5px] hover:bg-accent-hover disabled:opacity-50 transition-colors"
+        >
+          {mutation.isPending ? 'Salvataggio...' : 'Salva'}
+        </button>
+        {saved && (
+          <span className="text-sm text-success font-medium">Salvato!</span>
+        )}
       </div>
     </div>
   );

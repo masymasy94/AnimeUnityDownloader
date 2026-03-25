@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class EpisodeDownloadRequest(BaseModel):
     episode_id: int
     episode_number: str
+    episode_title: str | None = None
 
 
 class DownloadRequest(BaseModel):
@@ -16,6 +17,7 @@ class DownloadRequest(BaseModel):
     genres: list[str] = []
     plot: str | None = None
     year: str | None = None
+    source_site: str = "animeunity"
     episodes: list[EpisodeDownloadRequest]
 
 
@@ -26,6 +28,8 @@ class DownloadStatus(BaseModel):
     anime_slug: str
     episode_id: int
     episode_number: str
+    episode_title: str | None = None
+    source_site: str = "animeunity"
     status: str
     progress: float
     downloaded_bytes: int
@@ -34,6 +38,8 @@ class DownloadStatus(BaseModel):
     file_path: str | None
     host_file_path: str | None = None
     file_exists: bool = False
+    retry_count: int = 0
+    max_retries: int = 5
     error_message: str | None
     retry_count: int = 0
     created_at: datetime

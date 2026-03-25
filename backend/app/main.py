@@ -9,12 +9,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from .config import settings
 from .database import async_session, init_db
 from .services.animeunity_client import AnimeUnityClient
-from .services.anime_service import AnimeService
 from .services.download_service import DownloadService
-from .services.extractor_service import ExtractorService
 from .services.metadata_service import MetadataService
-from .services.search_service import SearchService
+from .services.providers import ProviderRegistry
+from .services.providers.animeunity_provider import AnimeUnityProvider
+from .services.providers.animeworld_provider import AnimeWorldProvider
 from .services.settings_service import SettingsService
+from .services.tracker_service import TrackerService
 from .services.ws_manager import WebSocketManager
 from .api.router import api_router
 
@@ -41,22 +42,24 @@ async def lifespan(app: FastAPI):
     download_dir = Path(settings.download_dir)
     download_dir.mkdir(parents=True, exist_ok=True)
 
+    # Create provider registry
+    registry = ProviderRegistry()
+    registry.register(AnimeUnityProvider())
+    registry.register(AnimeWorldProvider())
+
     # Create services and store in app.state for dependency injection
     client = AnimeUnityClient()
     ws_manager = WebSocketManager()
-    extractor = ExtractorService(client)
     metadata_svc = MetadataService(client)
 
-    app.state.search_service = SearchService(client)
-    app.state.anime_service = AnimeService(client)
+    app.state.provider_registry = registry
     app.state.settings_service = SettingsService(async_session)
     app.state.ws_manager = ws_manager
     app.state.db_session_factory = async_session
 
     download_service = DownloadService(
         db_session_factory=async_session,
-        client=client,
-        extractor=extractor,
+        provider_registry=registry,
         metadata_service=metadata_svc,
         ws_manager=ws_manager,
         download_dir=download_dir,
@@ -65,11 +68,21 @@ async def lifespan(app: FastAPI):
     app.state.download_service = download_service
     download_service.start()
 
+    tracker_service = TrackerService(
+        db_session_factory=async_session,
+        provider_registry=registry,
+        download_service=download_service,
+    )
+    app.state.tracker_service = tracker_service
+    tracker_service.start()
+
     logger.info("Ready — UI at http://0.0.0.0:8000")
     yield
 
     # Cleanup
+    await tracker_service.stop()
     await download_service.stop()
+    await registry.close_all()
     await client.close()
     logger.info("Stopped")
 

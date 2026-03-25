@@ -173,10 +173,19 @@ export function DownloadItem({ download }: DownloadItemProps) {
         </div>
       )}
 
-      {download.status === 'failed' && download.error_message && (
-        <p className="text-xs text-error/80 truncate" title={download.error_message}>
-          {download.error_message}
-        </p>
+      {download.status === 'failed' && (
+        <div className="flex items-center gap-2">
+          {download.error_message && (
+            <p className="text-xs text-error/80 truncate flex-1" title={download.error_message}>
+              {download.error_message}
+            </p>
+          )}
+          {download.retry_count > 0 && (
+            <span className="text-[11px] text-text-secondary flex-shrink-0">
+              {download.retry_count}/{download.max_retries} tentativi
+            </span>
+          )}
+        </div>
       )}
     </div>
   );

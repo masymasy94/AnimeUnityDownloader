@@ -1,10 +1,11 @@
 import type { SearchResponse } from '../types/anime';
 import { apiFetch } from './client';
 
-export function searchAnime(title: string): Promise<SearchResponse> {
-  return apiFetch<SearchResponse>(`/search?title=${encodeURIComponent(title)}`);
+export function searchAnime(title: string, site = 'animeunity'): Promise<SearchResponse> {
+  const params = new URLSearchParams({ title, site });
+  return apiFetch<SearchResponse>(`/search?${params}`);
 }
 
-export function getLatestAnime(): Promise<SearchResponse> {
-  return apiFetch<SearchResponse>('/latest');
+export function getLatestAnime(site = 'animeunity'): Promise<SearchResponse> {
+  return apiFetch<SearchResponse>(`/latest?site=${encodeURIComponent(site)}`);
 }

@@ -5,8 +5,8 @@ from sqlalchemy import select
 
 from ..models.download import Download
 from ..schemas.anime import AnimeDetail, Episode, EpisodesResponse
-from ..services.anime_service import AnimeService
-from .deps import get_anime_service, get_db_session_factory
+from ..services.providers import ProviderRegistry
+from .deps import get_provider_registry, get_db_session_factory
 
 router = APIRouter()
 
@@ -25,12 +25,14 @@ async def get_episodes(
     anime_path: str,
     start: int = Query(1, ge=1),
     end: int | None = Query(None),
-    svc: AnimeService = Depends(get_anime_service),
+    site: str = Query("animeunity"),
+    registry: ProviderRegistry = Depends(get_provider_registry),
     db_factory=Depends(get_db_session_factory),
 ):
     anime_id, slug = _parse_anime_path(anime_path)
     try:
-        episodes, total = await svc.get_episodes(anime_id, slug, start, end)
+        provider = registry.get(site)
+        episodes, total = await provider.get_episodes(anime_id, slug, start, end)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -62,10 +64,12 @@ async def get_episodes(
 @router.get("/anime/{anime_path:path}", response_model=AnimeDetail)
 async def get_anime_detail(
     anime_path: str,
-    svc: AnimeService = Depends(get_anime_service),
+    site: str = Query("animeunity"),
+    registry: ProviderRegistry = Depends(get_provider_registry),
 ):
     anime_id, slug = _parse_anime_path(anime_path)
     try:
-        return await svc.get_anime_info(anime_id, slug)
+        provider = registry.get(site)
+        return await provider.get_anime_info(anime_id, slug)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

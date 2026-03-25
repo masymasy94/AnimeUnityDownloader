@@ -1,13 +1,16 @@
 import { useState, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useParams, useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { getAnimeDetail, getEpisodes } from '../api/anime';
 import { startDownloads } from '../api/downloads';
+import { checkTrackedStatus, trackAnime, untrackAnime } from '../api/tracked';
 import { EpisodeList } from '../components/EpisodeList';
 import type { Episode } from '../types/anime';
 
 export function AnimeDetailPage() {
   const { animePath } = useParams<{ animePath: string }>();
+  const [searchParams] = useSearchParams();
+  const site = searchParams.get('site') || 'animeunity';
   const queryClient = useQueryClient();
   const [episodeEnd, setEpisodeEnd] = useState(120);
 
@@ -17,8 +20,8 @@ export function AnimeDetailPage() {
   const slug = match ? match[2] : '';
 
   const { data: anime, isLoading: animeLoading } = useQuery({
-    queryKey: ['anime', animeId, slug],
-    queryFn: () => getAnimeDetail(animeId, slug),
+    queryKey: ['anime', animeId, slug, site],
+    queryFn: () => getAnimeDetail(animeId, slug, site),
     enabled: !!animeId,
   });
 
@@ -27,9 +30,46 @@ export function AnimeDetailPage() {
     isLoading: episodesLoading,
     isFetching: episodesFetching,
   } = useQuery({
-    queryKey: ['episodes', animeId, slug, episodeEnd],
-    queryFn: () => getEpisodes(animeId, slug, 1, episodeEnd),
+    queryKey: ['episodes', animeId, slug, episodeEnd, site],
+    queryFn: () => getEpisodes(animeId, slug, 1, episodeEnd, site),
     enabled: !!animeId,
+  });
+
+  const { data: trackedStatus } = useQuery({
+    queryKey: ['tracked-status', animeId, site],
+    queryFn: () => checkTrackedStatus(animeId, site),
+    enabled: !!animeId,
+  });
+
+  const trackMutation = useMutation({
+    mutationFn: () => {
+      if (!anime) throw new Error('No anime');
+      return trackAnime({
+        anime_id: anime.id,
+        anime_slug: anime.slug,
+        anime_title: anime.title,
+        cover_url: anime.cover_url,
+        genres: anime.genres,
+        plot: anime.plot,
+        year: anime.year,
+        source_site: site,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tracked-status'] });
+      queryClient.invalidateQueries({ queryKey: ['tracked'] });
+    },
+  });
+
+  const untrackMutation = useMutation({
+    mutationFn: () => {
+      if (!trackedStatus?.id) throw new Error('Not tracked');
+      return untrackAnime(trackedStatus.id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tracked-status'] });
+      queryClient.invalidateQueries({ queryKey: ['tracked'] });
+    },
   });
 
   const handleDownload = useCallback(
@@ -43,11 +83,12 @@ export function AnimeDetailPage() {
         genres: anime.genres,
         plot: anime.plot,
         year: anime.year,
-        episodes: [{ episode_id: episode.id, episode_number: episode.number }],
+        source_site: site,
+        episodes: [{ episode_id: episode.id, episode_number: episode.number, episode_title: episode.title }],
       });
       queryClient.invalidateQueries({ queryKey: ['episodes'] });
     },
-    [anime, queryClient],
+    [anime, site, queryClient],
   );
 
   const handleDownloadAll = useCallback(async () => {
@@ -65,19 +106,21 @@ export function AnimeDetailPage() {
       genres: anime.genres,
       plot: anime.plot,
       year: anime.year,
+      source_site: site,
       episodes: downloadable.map((ep) => ({
         episode_id: ep.id,
         episode_number: ep.number,
+        episode_title: ep.title,
       })),
     });
     queryClient.invalidateQueries({ queryKey: ['episodes'] });
-  }, [anime, episodesData, queryClient]);
+  }, [anime, episodesData, site, queryClient]);
 
   const handleDownloadRange = useCallback(
     async (from: number, to: number) => {
       if (!anime) return;
       // Fetch episodes in the requested range from the API
-      const rangeData = await getEpisodes(animeId, slug, from, to);
+      const rangeData = await getEpisodes(animeId, slug, from, to, site);
       const downloadable = rangeData.episodes.filter(
         (ep) => !ep.download_status || ep.download_status === 'failed',
       );
@@ -91,6 +134,7 @@ export function AnimeDetailPage() {
         genres: anime.genres,
         plot: anime.plot,
         year: anime.year,
+        source_site: site,
         episodes: downloadable.map((ep) => ({
           episode_id: ep.id,
           episode_number: ep.number,
@@ -98,7 +142,29 @@ export function AnimeDetailPage() {
       });
       queryClient.invalidateQueries({ queryKey: ['episodes'] });
     },
-    [anime, animeId, slug, queryClient],
+    [anime, animeId, slug, site, queryClient],
+  );
+
+  const handleDownloadSelected = useCallback(
+    async (selected: Episode[]) => {
+      if (!anime || selected.length === 0) return;
+      await startDownloads({
+        anime_id: anime.id,
+        anime_title: anime.title,
+        anime_slug: anime.slug,
+        cover_url: anime.cover_url,
+        genres: anime.genres,
+        plot: anime.plot,
+        year: anime.year,
+        source_site: site,
+        episodes: selected.map((ep) => ({
+          episode_id: ep.id,
+          episode_number: ep.number,
+        })),
+      });
+      queryClient.invalidateQueries({ queryKey: ['episodes'] });
+    },
+    [anime, site, queryClient],
   );
 
   const handleLoadMore = useCallback(() => {
@@ -147,6 +213,20 @@ export function AnimeDetailPage() {
                   ITA
                 </span>
               )}
+              <button
+                onClick={() => trackedStatus?.tracked ? untrackMutation.mutate() : trackMutation.mutate()}
+                disabled={trackMutation.isPending || untrackMutation.isPending}
+                className={`ml-auto px-3 py-1.5 text-xs font-medium rounded-[5px] transition-colors flex items-center gap-1.5 ${
+                  trackedStatus?.tracked
+                    ? 'bg-accent text-white hover:bg-error'
+                    : 'bg-accent/10 text-accent hover:bg-accent hover:text-white'
+                }`}
+              >
+                <svg className="w-3.5 h-3.5" fill={trackedStatus?.tracked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+                {trackedStatus?.tracked ? 'Non seguire' : 'Segui'}
+              </button>
             </div>
             {anime.title_eng && anime.title_eng !== anime.title && (
               <p className="text-sm text-text-secondary">{anime.title_eng}</p>
@@ -208,6 +288,7 @@ export function AnimeDetailPage() {
           onDownload={handleDownload}
           onDownloadAll={handleDownloadAll}
           onDownloadRange={handleDownloadRange}
+          onDownloadSelected={handleDownloadSelected}
           isLoadingMore={episodesFetching}
         />
       ) : null}

@@ -37,3 +37,18 @@ async def init_db() -> None:
         await conn.execute(sqlalchemy.text("PRAGMA journal_mode=WAL"))
         await conn.execute(sqlalchemy.text("PRAGMA busy_timeout=10000"))
         await conn.execute(sqlalchemy.text("PRAGMA synchronous=NORMAL"))
+
+    # Migrations: add columns if missing
+    async with engine.begin() as conn:
+        for col, definition in [
+            ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
+            ("max_retries", "INTEGER NOT NULL DEFAULT 5"),
+            ("source_site", "TEXT NOT NULL DEFAULT 'animeunity'"),
+            ("episode_title", "TEXT"),
+        ]:
+            try:
+                await conn.execute(
+                    sqlalchemy.text(f"ALTER TABLE downloads ADD COLUMN {col} {definition}")
+                )
+            except Exception:
+                pass  # Column already exists

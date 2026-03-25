@@ -19,15 +19,7 @@
 <br />
 
 <p align="center">
-  <img src="docs/screenshots/home.png" width="800" alt="Homepage with currently airing anime" />
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/search.png" width="800" alt="Search results with filters" />
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/detail.png" width="800" alt="Anime detail page with episodes" />
+  <img src="docs/screenshots/demo.gif" width="800" alt="AnimeUnity Downloader demo — home, search, detail" />
 </p>
 
 ---
