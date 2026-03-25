@@ -13,6 +13,8 @@ from ..utils.filename import episode_filename
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 128 * 1024  # 128KB
+MIN_VIDEO_SIZE = 50 * 1024  # 50KB – anything smaller is certainly not a real video
+VALID_VIDEO_CONTENT_TYPES = {"video/", "application/octet-stream", "binary/octet-stream"}
 
 
 class DownloadWorker:
@@ -109,6 +111,22 @@ class DownloadWorker:
         session = await self._client._ensure_session()
         response = await session.get(source.url, headers=headers, stream=True)
 
+        # Validate HTTP response status
+        status_code = response.status_code
+        if status_code >= 400:
+            raise DownloadError(
+                f"Server returned HTTP {status_code} "
+                f"(expected 200/206)"
+            )
+
+        # Validate content-type (reject HTML error pages)
+        content_type = response.headers.get("Content-Type", "").lower()
+        if "text/html" in content_type:
+            raise DownloadError(
+                f"Server returned HTML instead of video "
+                f"(Content-Type: {content_type}, HTTP {status_code})"
+            )
+
         # Get total size
         total_bytes = 0
         content_range = response.headers.get("Content-Range", "")
@@ -141,6 +159,15 @@ class DownloadWorker:
                     )
                     last_report = now
                     last_bytes = downloaded
+
+        # Validate downloaded file size
+        actual_size = part_path.stat().st_size
+        if actual_size < MIN_VIDEO_SIZE:
+            part_path.unlink(missing_ok=True)
+            raise DownloadError(
+                f"Downloaded file too small ({actual_size} bytes), "
+                f"likely an error page or empty response"
+            )
 
         # Final progress report
         if progress_callback:
@@ -214,3 +241,8 @@ class DownloadWorker:
 
         if process.returncode != 0:
             raise RuntimeError("ffmpeg remux failed")
+
+
+class DownloadError(Exception):
+    """Raised when a download fails in a way that may be retried."""
+    pass

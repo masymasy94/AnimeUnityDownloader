@@ -35,6 +35,7 @@ class DownloadStatus(BaseModel):
     host_file_path: str | None = None
     file_exists: bool = False
     error_message: str | None
+    retry_count: int = 0
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None

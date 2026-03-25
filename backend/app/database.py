@@ -16,7 +16,9 @@ if _db_file:
 engine = create_async_engine(
     _db_url,
     echo=False,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30},
+    pool_size=1,
+    max_overflow=2,
 )
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -33,3 +35,5 @@ async def init_db() -> None:
     # Enable WAL mode for better concurrent read/write
     async with engine.begin() as conn:
         await conn.execute(sqlalchemy.text("PRAGMA journal_mode=WAL"))
+        await conn.execute(sqlalchemy.text("PRAGMA busy_timeout=10000"))
+        await conn.execute(sqlalchemy.text("PRAGMA synchronous=NORMAL"))

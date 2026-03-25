@@ -19,6 +19,32 @@ from .ws_manager import WebSocketManager
 
 logger = logging.getLogger(__name__)
 
+MAX_AUTO_RETRIES = 3
+RETRY_BACKOFF_BASE = 30  # seconds between retries (30, 60, 90)
+
+# DB write retry settings for SQLite contention
+_DB_WRITE_ATTEMPTS = 5
+_DB_WRITE_BACKOFF = 0.3  # seconds
+
+
+async def _db_execute_with_retry(db_factory, stmt):
+    """Execute a DB write with retry on 'database is locked'."""
+    for attempt in range(1, _DB_WRITE_ATTEMPTS + 1):
+        try:
+            async with db_factory() as session:
+                await session.execute(stmt)
+                await session.commit()
+                return
+        except Exception as exc:
+            if "database is locked" in str(exc) and attempt < _DB_WRITE_ATTEMPTS:
+                logger.warning(
+                    "DB locked (attempt %d/%d), retrying in %.1fs...",
+                    attempt, _DB_WRITE_ATTEMPTS, _DB_WRITE_BACKOFF * attempt,
+                )
+                await asyncio.sleep(_DB_WRITE_BACKOFF * attempt)
+            else:
+                raise
+
 
 class DownloadService:
     """Manages the download queue, spawns workers, enforces concurrency limits."""
@@ -175,6 +201,7 @@ class DownloadService:
                     total_bytes=0,
                     speed_bps=0,
                     error_message=None,
+                    retry_count=0,
                     started_at=None,
                     completed_at=None,
                 )
@@ -261,7 +288,7 @@ class DownloadService:
             await asyncio.sleep(2)
 
     async def _download_one(self, download_id: int) -> None:
-        """Execute a single download."""
+        """Execute a single download with automatic retry on failure."""
         async with self._db() as session:
             download = await session.get(Download, download_id)
             if not download or download.status != "queued":
@@ -269,6 +296,7 @@ class DownloadService:
 
             download.status = "downloading"
             download.started_at = datetime.utcnow()
+            download.retry_count = download.retry_count or 0
             await session.commit()
 
             dl_info = {
@@ -281,6 +309,7 @@ class DownloadService:
                 "genres": json.loads(download.genres) if download.genres else None,
                 "plot": download.plot,
                 "year": download.year,
+                "retry_count": download.retry_count or 0,
             }
 
         await self._ws.broadcast({
@@ -296,8 +325,10 @@ class DownloadService:
                 speed_bps: int,
                 progress: float,
             ):
-                async with self._db() as session:
-                    await session.execute(
+                # Use retry helper to avoid "database is locked" crashes
+                try:
+                    await _db_execute_with_retry(
+                        self._db,
                         update(Download)
                         .where(Download.id == dl_info["id"])
                         .values(
@@ -305,9 +336,11 @@ class DownloadService:
                             downloaded_bytes=downloaded_bytes,
                             total_bytes=total_bytes,
                             speed_bps=speed_bps,
-                        )
+                        ),
                     )
-                    await session.commit()
+                except Exception:
+                    # Progress update failure must not kill the download
+                    logger.debug("Progress DB update skipped (contention)")
 
                 await self._ws.broadcast({
                     "type": "progress",
@@ -331,18 +364,25 @@ class DownloadService:
                 year=dl_info["year"],
             )
 
-            async with self._db() as session:
-                await session.execute(
-                    update(Download)
-                    .where(Download.id == dl_info["id"])
-                    .values(
-                        status="completed",
-                        progress=100.0,
-                        file_path=str(file_path),
-                        completed_at=datetime.utcnow(),
-                    )
+            # Validate that the output file actually exists and is a real video
+            if not file_path.exists() or file_path.stat().st_size < 50 * 1024:
+                size = file_path.stat().st_size if file_path.exists() else 0
+                file_path.unlink(missing_ok=True)
+                raise RuntimeError(
+                    f"Output file missing or too small ({size} bytes)"
                 )
-                await session.commit()
+
+            await _db_execute_with_retry(
+                self._db,
+                update(Download)
+                .where(Download.id == dl_info["id"])
+                .values(
+                    status="completed",
+                    progress=100.0,
+                    file_path=str(file_path),
+                    completed_at=datetime.utcnow(),
+                ),
+            )
 
             await self._ws.broadcast({
                 "type": "status_change",
@@ -355,36 +395,101 @@ class DownloadService:
             logger.info("Download completed: %s EP%s", dl_info["anime_title"], dl_info["episode_number"])
 
         except asyncio.CancelledError:
-            async with self._db() as session:
-                await session.execute(
-                    update(Download)
-                    .where(Download.id == dl_info["id"])
-                    .values(status="cancelled")
-                )
-                await session.commit()
+            await _db_execute_with_retry(
+                self._db,
+                update(Download)
+                .where(Download.id == dl_info["id"])
+                .values(status="cancelled"),
+            )
             raise
 
         except Exception as exc:
             error_msg = str(exc)
-            logger.error(
-                "Download failed for %s EP%s: %s",
-                dl_info["anime_title"], dl_info["episode_number"], error_msg,
-            )
+            retry_count = dl_info["retry_count"]
 
-            async with self._db() as session:
-                await session.execute(
+            # Clean up partial / corrupt files on failure
+            self._cleanup_partial_files(dl_info["anime_title"], dl_info["episode_number"])
+
+            if retry_count < MAX_AUTO_RETRIES:
+                # Schedule automatic retry
+                next_retry = retry_count + 1
+                wait = RETRY_BACKOFF_BASE * next_retry
+                logger.warning(
+                    "Download failed for %s EP%s (attempt %d/%d): %s — retrying in %ds",
+                    dl_info["anime_title"], dl_info["episode_number"],
+                    next_retry, MAX_AUTO_RETRIES, error_msg, wait,
+                )
+
+                await _db_execute_with_retry(
+                    self._db,
+                    update(Download)
+                    .where(Download.id == dl_info["id"])
+                    .values(
+                        status="queued",
+                        progress=0.0,
+                        downloaded_bytes=0,
+                        total_bytes=0,
+                        speed_bps=0,
+                        retry_count=next_retry,
+                        error_message=f"Retry {next_retry}/{MAX_AUTO_RETRIES}: {error_msg}",
+                        started_at=None,
+                    ),
+                )
+
+                await self._ws.broadcast({
+                    "type": "status_change",
+                    "download_id": dl_info["id"],
+                    "status": "queued",
+                    "error_message": f"Retrying ({next_retry}/{MAX_AUTO_RETRIES})...",
+                })
+
+                # Wait before retry to let server recover
+                await asyncio.sleep(wait)
+            else:
+                # Max retries exhausted — mark as permanently failed
+                logger.error(
+                    "Download permanently failed for %s EP%s after %d retries: %s",
+                    dl_info["anime_title"], dl_info["episode_number"],
+                    MAX_AUTO_RETRIES, error_msg,
+                )
+
+                await _db_execute_with_retry(
+                    self._db,
                     update(Download)
                     .where(Download.id == dl_info["id"])
                     .values(
                         status="failed",
-                        error_message=error_msg,
-                    )
+                        error_message=f"Failed after {MAX_AUTO_RETRIES} retries: {error_msg}",
+                    ),
                 )
-                await session.commit()
 
-            await self._ws.broadcast({
-                "type": "error",
-                "download_id": dl_info["id"],
-                "status": "failed",
-                "error_message": error_msg,
-            })
+                await self._ws.broadcast({
+                    "type": "error",
+                    "download_id": dl_info["id"],
+                    "status": "failed",
+                    "error_message": error_msg,
+                })
+
+    def _cleanup_partial_files(self, anime_title: str, episode_number: str) -> None:
+        """Remove .part and .raw partial files left by a failed download."""
+        from ..utils.filename import episode_filename
+
+        try:
+            relative_path = episode_filename(anime_title, episode_number, 100)
+            base_path = self._download_dir / relative_path
+            parent = base_path.parent
+
+            if not parent.exists():
+                return
+
+            stem = base_path.stem  # e.g. "EP001"
+            for f in parent.iterdir():
+                if f.name.startswith(stem) and (
+                    f.suffix == ".part"
+                    or f.name.endswith(".raw.part")
+                    or f.name.endswith(".raw")
+                ):
+                    logger.info("Cleaning up partial file: %s", f)
+                    f.unlink(missing_ok=True)
+        except Exception as exc:
+            logger.warning("Cleanup failed: %s", exc)
