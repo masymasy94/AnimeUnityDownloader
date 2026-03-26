@@ -151,6 +151,7 @@ class AnimeUnityProvider(SiteProvider):
             genres=_parse_genres(data.get("genres")),
             status=data.get("status"),
             dub=bool(data.get("dub", False)),
+            source_site="animeunity",
         )
 
     async def get_episodes(

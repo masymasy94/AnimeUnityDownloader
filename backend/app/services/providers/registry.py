@@ -23,6 +23,9 @@ class ProviderRegistry:
             for p in self._providers.values()
         ]
 
+    def all_providers(self) -> list[SiteProvider]:
+        return list(self._providers.values())
+
     @property
     def default(self) -> SiteProvider:
         return next(iter(self._providers.values()))

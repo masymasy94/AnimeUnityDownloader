@@ -1,7 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { searchAnime, getLatestAnime } from '../api/search';
-import { getSites } from '../api/sites';
 import { SearchBar } from '../components/SearchBar';
 import { AnimeCard } from '../components/AnimeCard';
 
@@ -12,28 +11,21 @@ const TYPE_ORDER: Record<string, number> = { TV: 0, Movie: 1, ONA: 2, OVA: 3, Sp
 
 export function SearchPage() {
   const [query, setQuery] = useState('');
-  const [activeSite, setActiveSite] = useState('animeunity');
   const [typeFilter, setTypeFilter] = useState<string>('Tutti');
   const [dubFilter, setDubFilter] = useState<string>('Tutti');
   const [genreFilter, setGenreFilter] = useState<string>('Tutti');
 
   const handleSearch = useCallback((q: string) => setQuery(q), []);
 
-  const { data: sitesData } = useQuery({
-    queryKey: ['sites'],
-    queryFn: getSites,
-    staleTime: Infinity,
-  });
-
   const { data, isLoading, error } = useQuery({
-    queryKey: ['search', query, activeSite],
-    queryFn: () => searchAnime(query, activeSite),
+    queryKey: ['search', query],
+    queryFn: () => searchAnime(query),
     enabled: query.length >= 2,
   });
 
   const { data: latestData } = useQuery({
-    queryKey: ['latest', activeSite],
-    queryFn: () => getLatestAnime(activeSite),
+    queryKey: ['latest'],
+    queryFn: getLatestAnime,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -134,24 +126,6 @@ export function SearchPage() {
               </p>
             )}
           </div>
-          {/* Site selector */}
-          {sitesData && sitesData.sites.length > 1 && (
-            <div className="flex gap-1 mb-3">
-              {sitesData.sites.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => setActiveSite(s.id)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-[5px] transition-colors ${
-                    activeSite === s.id
-                      ? 'bg-accent text-white'
-                      : 'bg-bg-secondary/50 text-text-secondary hover:text-text-white border border-border/50'
-                  }`}
-                >
-                  {s.name}
-                </button>
-              ))}
-            </div>
-          )}
           <div className={`w-full transition-all duration-500 ${showHero ? 'max-w-xl' : 'max-w-2xl'}`}>
             <SearchBar onSearch={handleSearch} isLoading={isLoading} />
           </div>
@@ -243,7 +217,7 @@ export function SearchPage() {
       {filtered.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {filtered.map((anime) => (
-            <AnimeCard key={anime.id} anime={anime} site={activeSite} />
+            <AnimeCard key={`${anime.source_site}-${anime.id}`} anime={anime} site={anime.source_site} />
           ))}
         </div>
       )}
@@ -266,7 +240,7 @@ export function SearchPage() {
           <h2 className="text-lg font-semibold text-text-white mb-4">In onda ora</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {latestData.results.map((anime) => (
-              <AnimeCard key={anime.id} anime={anime} site={activeSite} />
+              <AnimeCard key={`${anime.source_site}-${anime.id}`} anime={anime} site={anime.source_site} />
             ))}
           </div>
         </div>

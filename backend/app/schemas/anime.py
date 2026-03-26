@@ -12,6 +12,7 @@ class AnimeSearchResult(BaseModel):
     episodes_count: int | None = None
     genres: list[str] = []
     dub: bool = False
+    source_site: str = "animeunity"
 
 
 class AnimeDetail(BaseModel):
@@ -28,6 +29,7 @@ class AnimeDetail(BaseModel):
     genres: list[str] = []
     status: str | None = None
     dub: bool = False
+    source_site: str = "animeunity"
 
 
 class Episode(BaseModel):

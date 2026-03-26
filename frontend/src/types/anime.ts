@@ -9,6 +9,7 @@ export interface AnimeSearchResult {
   episodes_count: number | null;
   genres: string[];
   dub: boolean;
+  source_site: string;
 }
 
 export interface AnimeDetail {
@@ -25,6 +26,7 @@ export interface AnimeDetail {
   genres: string[];
   status: string | null;
   dub: boolean;
+  source_site: string;
 }
 
 export interface Episode {

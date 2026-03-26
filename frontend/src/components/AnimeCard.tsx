@@ -6,8 +6,16 @@ interface AnimeCardProps {
   site?: string;
 }
 
-export function AnimeCard({ anime, site = 'animeunity' }: AnimeCardProps) {
-  const siteParam = site !== 'animeunity' ? `?site=${site}` : '';
+const SITE_BADGE: Record<string, { label: string; className: string }> = {
+  animeunity: { label: 'AU', className: 'bg-accent text-white' },
+  animeworld: { label: 'AW', className: 'bg-emerald-500 text-white' },
+};
+
+export function AnimeCard({ anime, site }: AnimeCardProps) {
+  const sourceSite = site || anime.source_site || 'animeunity';
+  const siteParam = sourceSite !== 'animeunity' ? `?site=${sourceSite}` : '';
+  const badge = SITE_BADGE[sourceSite] || { label: sourceSite.toUpperCase().slice(0, 2), className: 'bg-gray-500 text-white' };
+
   return (
     <Link
       to={`/anime/${anime.id}-${anime.slug}${siteParam}`}
@@ -26,11 +34,16 @@ export function AnimeCard({ anime, site = 'animeunity' }: AnimeCardProps) {
             No Cover
           </div>
         )}
-        {anime.type && (
-          <span className="absolute top-2 left-2 px-2 py-0.5 bg-accent text-white text-[10px] font-bold rounded">
-            {anime.type}
+        <div className="absolute top-2 left-2 flex gap-1">
+          <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${badge.className}`}>
+            {badge.label}
           </span>
-        )}
+          {anime.type && (
+            <span className="px-2 py-0.5 bg-black/60 text-white text-[10px] font-bold rounded">
+              {anime.type}
+            </span>
+          )}
+        </div>
         {anime.dub && (
           <span className="absolute top-2 right-2 px-2 py-0.5 bg-warning text-black text-[10px] font-bold rounded">
             ITA
