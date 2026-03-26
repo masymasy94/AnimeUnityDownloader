@@ -78,35 +78,44 @@ class AnimeUnityProvider(SiteProvider):
             return self._csrf_token
         raise RuntimeError("Could not extract CSRF token from archivio page")
 
-    async def search(self, title: str) -> list[AnimeSearchResult]:
+    async def _post_archivio(self, data: dict) -> dict | list:
+        """POST to /archivio/get-animes with automatic CSRF token refresh on 419."""
         csrf = await self._get_csrf_token()
+        try:
+            return await self._client.post_json(
+                "/archivio/get-animes",
+                data=data,
+                headers={"X-CSRF-TOKEN": csrf, "X-Requested-With": "XMLHttpRequest"},
+            )
+        except Exception as exc:
+            if "419" in str(exc):
+                logger.info("CSRF token expired, refreshing session...")
+                self._csrf_token = None
+                await self._client.close()
+                self._client = AnimeUnityClient()
+                csrf = await self._get_csrf_token()
+                return await self._client.post_json(
+                    "/archivio/get-animes",
+                    data=data,
+                    headers={"X-CSRF-TOKEN": csrf, "X-Requested-With": "XMLHttpRequest"},
+                )
+            raise
+
+    async def search(self, title: str) -> list[AnimeSearchResult]:
         all_results: dict[int, AnimeSearchResult] = {}
 
-        data = await self._client.post_json(
-            "/archivio/get-animes",
-            data={"title": title, "offset": 0},
-            headers={"X-CSRF-TOKEN": csrf, "X-Requested-With": "XMLHttpRequest"},
-        )
+        data = await self._post_archivio({"title": title, "offset": 0})
         for item in self._extract_records(data):
             all_results[item.id] = item
 
-        data_dub = await self._client.post_json(
-            "/archivio/get-animes",
-            data={"title": title, "offset": 0, "dubbed": True},
-            headers={"X-CSRF-TOKEN": csrf, "X-Requested-With": "XMLHttpRequest"},
-        )
+        data_dub = await self._post_archivio({"title": title, "offset": 0, "dubbed": True})
         for item in self._extract_records(data_dub):
             all_results[item.id] = item
 
         return list(all_results.values())
 
     async def get_latest(self) -> list[AnimeSearchResult]:
-        csrf = await self._get_csrf_token()
-        data = await self._client.post_json(
-            "/archivio/get-animes",
-            data={"title": "", "offset": 0, "status": "In Corso"},
-            headers={"X-CSRF-TOKEN": csrf, "X-Requested-With": "XMLHttpRequest"},
-        )
+        data = await self._post_archivio({"title": "", "offset": 0, "status": "In Corso"})
         return self._extract_records(data)
 
     def _extract_records(self, data: dict | list) -> list[AnimeSearchResult]:
