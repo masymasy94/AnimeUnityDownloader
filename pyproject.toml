@@ -1,7 +1,7 @@
 [project]
-name = "animeunity-downloader"
-version = "0.1.0"
-description = "Self-hosted web app to search and download anime from AnimeUnity with metadata embedding"
+name = "hasasiero-animehub"
+version = "1.0.0"
+description = "Self-hosted anime hub — search, stream and download from multiple Italian anime sites"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",

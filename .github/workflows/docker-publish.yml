@@ -52,16 +52,16 @@ jobs:
 
     steps:
       - name: Pull new image
-        run: docker compose -f ${{ env.COMPOSE_FILE }} pull animeunity-downloader
+        run: docker compose -f ${{ env.COMPOSE_FILE }} pull animehub
 
       - name: Recreate container
-        run: docker compose -f ${{ env.COMPOSE_FILE }} up -d animeunity-downloader
+        run: docker compose -f ${{ env.COMPOSE_FILE }} up -d animehub
 
       - name: Wait for health check
         run: |
           echo "Waiting for container to become healthy..."
           for i in $(seq 1 20); do
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' animeunity-downloader 2>/dev/null || echo "starting")
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' animehub 2>/dev/null || echo "starting")
             echo "  Attempt $i/20: $STATUS"
             if [ "$STATUS" = "healthy" ]; then
               echo "Container is healthy!"
@@ -70,5 +70,5 @@ jobs:
             sleep 5
           done
           echo "WARNING: Container did not become healthy within 100s"
-          docker logs --tail 20 animeunity-downloader
+          docker logs --tail 20 animehub
           exit 1

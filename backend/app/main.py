@@ -35,7 +35,7 @@ STATIC_EXISTS = STATIC_DIR.is_dir()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting AnimeUnity Downloader...")
+    logger.info("Starting Hasasiero AnimeHub...")
 
     await init_db()
     logger.info("Database initialized")
@@ -91,8 +91,8 @@ async def lifespan(app: FastAPI):
 
 # ── Create app ──
 app = FastAPI(
-    title="AnimeUnity Downloader",
-    version="0.1.0",
+    title="Hasasiero AnimeHub",
+    version="1.0.0",
     lifespan=lifespan,
 )
 
