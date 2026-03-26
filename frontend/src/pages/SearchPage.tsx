@@ -14,8 +14,6 @@ export function SearchPage() {
   const [siteFilter, setSiteFilter] = useState<string>('Tutti');
   const [typeFilter, setTypeFilter] = useState<string>('Tutti');
   const [dubFilter, setDubFilter] = useState<string>('Tutti');
-  const [genreFilter, setGenreFilter] = useState<string>('Tutti');
-
   const handleSearch = useCallback((q: string) => setQuery(q), []);
 
   const { data, isLoading, error } = useQuery({
@@ -29,16 +27,6 @@ export function SearchPage() {
     queryFn: getLatestAnime,
     staleTime: 5 * 60 * 1000,
   });
-
-  // Collect all genres from results
-  const allGenres = useMemo(() => {
-    if (!data?.results) return [];
-    const genreSet = new Set<string>();
-    for (const r of data.results) {
-      for (const g of r.genres) genreSet.add(g);
-    }
-    return Array.from(genreSet).sort();
-  }, [data]);
 
   const filtered = useMemo(() => {
     if (!data?.results) return [];
@@ -59,10 +47,6 @@ export function SearchPage() {
       results = results.filter((a) => a.dub);
     }
 
-    if (genreFilter !== 'Tutti') {
-      results = results.filter((a) => a.genres.includes(genreFilter));
-    }
-
     results.sort((a, b) => {
       const typeA = TYPE_ORDER[a.type ?? ''] ?? 99;
       const typeB = TYPE_ORDER[b.type ?? ''] ?? 99;
@@ -71,7 +55,7 @@ export function SearchPage() {
     });
 
     return results;
-  }, [data, siteFilter, typeFilter, dubFilter, genreFilter]);
+  }, [data, siteFilter, typeFilter, dubFilter]);
 
   const siteCounts = useMemo(() => {
     if (!data?.results) return {};
@@ -158,34 +142,32 @@ export function SearchPage() {
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-4">
             {/* Site filter */}
-            {Object.keys(siteCounts).length > 1 && (
-              <div className="flex gap-1">
+            <div className="flex gap-1">
+              <button
+                onClick={() => setSiteFilter('Tutti')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-[5px] transition-colors ${
+                  siteFilter === 'Tutti'
+                    ? 'bg-accent text-white'
+                    : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
+                }`}
+              >
+                Tutti <span className="ml-1 opacity-60">{data!.results.length}</span>
+              </button>
+              {Object.entries(siteCounts).map(([site, count]) => (
                 <button
-                  onClick={() => setSiteFilter('Tutti')}
+                  key={site}
+                  onClick={() => setSiteFilter(site)}
                   className={`px-3 py-1.5 text-xs font-medium rounded-[5px] transition-colors ${
-                    siteFilter === 'Tutti'
+                    siteFilter === site
                       ? 'bg-accent text-white'
                       : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
                   }`}
                 >
-                  Tutti <span className="ml-1 opacity-60">{data!.results.length}</span>
+                  {site === 'animeunity' ? 'AnimeUnity' : site === 'animeworld' ? 'AnimeWorld' : site}
+                  <span className="ml-1 opacity-60">{count}</span>
                 </button>
-                {Object.entries(siteCounts).map(([site, count]) => (
-                  <button
-                    key={site}
-                    onClick={() => setSiteFilter(site)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-[5px] transition-colors ${
-                      siteFilter === site
-                        ? 'bg-accent text-white'
-                        : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
-                    }`}
-                  >
-                    {site === 'animeunity' ? 'AnimeUnity' : site === 'animeworld' ? 'AnimeWorld' : site}
-                    <span className="ml-1 opacity-60">{count}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+              ))}
+            </div>
 
             {/* Type filter */}
             <div className="flex gap-1">
@@ -227,34 +209,6 @@ export function SearchPage() {
             </div>
           </div>
 
-          {/* Genre filter */}
-          {allGenres.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              <button
-                onClick={() => setGenreFilter('Tutti')}
-                className={`px-2.5 py-1 text-[11px] font-medium rounded-full transition-colors ${
-                  genreFilter === 'Tutti'
-                    ? 'bg-accent text-white'
-                    : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
-                }`}
-              >
-                Tutti i generi
-              </button>
-              {allGenres.map((g) => (
-                <button
-                  key={g}
-                  onClick={() => setGenreFilter(g === genreFilter ? 'Tutti' : g)}
-                  className={`px-2.5 py-1 text-[11px] font-medium rounded-full transition-colors ${
-                    genreFilter === g
-                      ? 'bg-accent text-white'
-                      : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
-                  }`}
-                >
-                  {g}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       )}
 
