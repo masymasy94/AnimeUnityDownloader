@@ -14,6 +14,7 @@ from .services.metadata_service import MetadataService
 from .services.providers import ProviderRegistry
 from .services.providers.animeunity_provider import AnimeUnityProvider
 from .services.providers.animeworld_provider import AnimeWorldProvider
+from .services.providers.animesaturn_provider import AnimeSaturnProvider
 from .services.settings_service import SettingsService
 from .services.tracker_service import TrackerService
 from .services.ws_manager import WebSocketManager
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI):
     registry = ProviderRegistry()
     registry.register(AnimeUnityProvider())
     registry.register(AnimeWorldProvider())
+    registry.register(AnimeSaturnProvider())
 
     # Create services and store in app.state for dependency injection
     client = AnimeUnityClient()
