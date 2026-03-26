@@ -7,7 +7,7 @@ type Tab = 'all' | 'active' | 'completed' | 'failed';
 
 const TAB_FILTERS: Record<Tab, string[] | undefined> = {
   all: undefined,
-  active: ['queued', 'downloading'],
+  active: ['queued', 'downloading', 'finalizing'],
   completed: ['completed'],
   failed: ['failed', 'cancelled'],
 };
@@ -34,7 +34,14 @@ export function DownloadsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['downloads', activeTab],
     queryFn: () => getDownloads(TAB_FILTERS[activeTab]),
-    refetchInterval: 3000,
+    refetchInterval: (query) => {
+      // Poll faster when there are active downloads, slower otherwise
+      const downloads = query.state.data?.downloads;
+      const hasActive = downloads?.some(
+        (d) => d.status === 'downloading' || d.status === 'queued' || d.status === 'finalizing',
+      );
+      return hasActive ? 5000 : 30000;
+    },
   });
 
   const { data: disk } = useQuery({
@@ -44,7 +51,7 @@ export function DownloadsPage() {
   });
 
   const hasActive = data?.downloads?.some(
-    (d) => d.status === 'downloading' || d.status === 'queued',
+    (d) => d.status === 'downloading' || d.status === 'queued' || d.status === 'finalizing',
   );
 
   const hasFinished = data?.downloads?.some(

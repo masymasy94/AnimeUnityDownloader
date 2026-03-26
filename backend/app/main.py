@@ -11,6 +11,7 @@ from .database import async_session, init_db
 from .services.animeunity_client import AnimeUnityClient
 from .services.download_service import DownloadService
 from .services.metadata_service import MetadataService
+from .services.nas_queue import NasIOQueue
 from .services.providers import ProviderRegistry
 from .services.providers.animeunity_provider import AnimeUnityProvider
 from .services.providers.animeworld_provider import AnimeWorldProvider
@@ -54,9 +55,14 @@ async def lifespan(app: FastAPI):
     ws_manager = WebSocketManager()
     metadata_svc = MetadataService(client)
 
+    # NAS I/O queue — all NAS operations go through here
+    nas_queue = NasIOQueue(nas_dir=download_dir)
+    nas_queue.start()
+
     app.state.provider_registry = registry
     app.state.settings_service = SettingsService(async_session)
     app.state.ws_manager = ws_manager
+    app.state.nas_queue = nas_queue
     app.state.db_session_factory = async_session
 
     download_service = DownloadService(
@@ -64,6 +70,7 @@ async def lifespan(app: FastAPI):
         provider_registry=registry,
         metadata_service=metadata_svc,
         ws_manager=ws_manager,
+        nas_queue=nas_queue,
         download_dir=download_dir,
         max_concurrent=settings.max_concurrent_downloads,
     )
@@ -84,6 +91,7 @@ async def lifespan(app: FastAPI):
     # Cleanup
     await tracker_service.stop()
     await download_service.stop()
+    await nas_queue.stop()
     await registry.close_all()
     await client.close()
     logger.info("Stopped")

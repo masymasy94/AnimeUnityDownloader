@@ -41,8 +41,8 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
             status: msg.status,
             file_path: msg.file_path,
           });
-          // Clear progress for completed/failed
-          if (msg.status === 'completed' || msg.status === 'failed') {
+          // Clear progress for completed/failed/finalizing
+          if (msg.status === 'completed' || msg.status === 'failed' || msg.status === 'finalizing') {
             const progressNext = new Map(state.progress);
             progressNext.delete(msg.download_id);
             return { statusChanges: next, progress: progressNext };

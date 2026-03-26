@@ -47,8 +47,8 @@ export function Sidebar() {
 
   const { data } = useQuery({
     queryKey: ['downloads', 'active'],
-    queryFn: () => getDownloads(['queued', 'downloading']),
-    refetchInterval: 5000,
+    queryFn: () => getDownloads(['queued', 'downloading', 'finalizing']),
+    refetchInterval: 10000,
   });
 
   const activeCount = data?.downloads?.length ?? 0;

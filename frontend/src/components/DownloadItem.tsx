@@ -31,6 +31,7 @@ function getDirectoryPath(filePath: string): string {
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   queued: { label: 'In coda', className: 'text-warning' },
   downloading: { label: 'Download', className: 'text-accent' },
+  finalizing: { label: 'Spostamento su NAS', className: 'text-accent' },
   completed: { label: 'Completato', className: 'text-success' },
   failed: { label: 'Fallito', className: 'text-error' },
   cancelled: { label: 'Annullato', className: 'text-text-secondary' },
@@ -48,6 +49,7 @@ export function DownloadItem({ download }: DownloadItemProps) {
 
   const statusConfig = STATUS_CONFIG[download.status] ?? STATUS_CONFIG.queued;
   const isActive = download.status === 'downloading' || download.status === 'queued';
+  const isFinalizing = download.status === 'finalizing';
 
   const hostPath = download.host_file_path || download.file_path;
   const dirPath = hostPath ? getDirectoryPath(hostPath) : null;
@@ -141,6 +143,13 @@ export function DownloadItem({ download }: DownloadItemProps) {
             </div>
           </div>
         </>
+      )}
+
+      {isFinalizing && (
+        <div className="flex items-center gap-2 text-xs text-accent">
+          <span className="inline-block w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+          <span>Spostamento file su NAS in corso...</span>
+        </div>
       )}
 
       {/* File path + copy feedback for completed downloads */}

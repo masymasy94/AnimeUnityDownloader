@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from ..models.setting import Setting
 from ..schemas.download import DownloadRequest
 from .download_worker import DownloadWorker
 from .metadata_service import MetadataService
+from .nas_queue import NasIOQueue
 from .plex_service import PlexService
 from .providers import ProviderRegistry
 from .ws_manager import WebSocketManager
@@ -25,6 +27,9 @@ RETRY_BACKOFF_BASE = 30  # seconds between retries (30, 60, 90)
 # DB write retry settings for SQLite contention
 _DB_WRITE_ATTEMPTS = 5
 _DB_WRITE_BACKOFF = 0.3  # seconds
+
+# Local temp directory — downloads + ffmpeg happen here, then move to NAS
+LOCAL_TEMP_DIR = Path(tempfile.gettempdir()) / "animehub"
 
 
 async def _db_execute_with_retry(db_factory, stmt):
@@ -47,7 +52,11 @@ async def _db_execute_with_retry(db_factory, stmt):
 
 
 class DownloadService:
-    """Manages the download queue, spawns workers, enforces concurrency limits."""
+    """Manages the download queue, spawns workers, enforces concurrency limits.
+
+    Downloads happen to a local temp directory first (fast I/O), then files
+    are moved to the NAS via NasIOQueue so the event loop is never blocked.
+    """
 
     def __init__(
         self,
@@ -55,6 +64,7 @@ class DownloadService:
         provider_registry: ProviderRegistry,
         metadata_service: MetadataService,
         ws_manager: WebSocketManager,
+        nas_queue: NasIOQueue,
         download_dir: Path,
         max_concurrent: int = 2,
     ):
@@ -62,15 +72,23 @@ class DownloadService:
         self._registry = provider_registry
         self._worker = DownloadWorker(provider_registry, metadata_service)
         self._ws = ws_manager
+        self._nas_queue = nas_queue
         self._plex = PlexService(db_session_factory)
         self._download_dir = download_dir
+        self._local_temp = LOCAL_TEMP_DIR
         self._default_max_concurrent = max_concurrent
         self._active_tasks: dict[int, asyncio.Task] = {}
         self._worker_task: asyncio.Task | None = None
 
     def start(self) -> None:
+        self._local_temp.mkdir(parents=True, exist_ok=True)
         self._worker_task = asyncio.create_task(self._worker_loop())
-        logger.info("Download worker started (default max concurrent: %d)", self._default_max_concurrent)
+        asyncio.create_task(self._reset_stale_statuses())
+        logger.info(
+            "Download worker started (max concurrent: %d, local temp: %s)",
+            self._default_max_concurrent,
+            self._local_temp,
+        )
 
     async def stop(self) -> None:
         if self._worker_task:
@@ -88,6 +106,30 @@ class DownloadService:
 
         self._active_tasks.clear()
         logger.info("Download worker stopped")
+
+    async def _reset_stale_statuses(self) -> None:
+        """Reset downloads stuck in transient states from a previous crash."""
+        try:
+            async with self._db() as session:
+                result = await session.execute(
+                    update(Download)
+                    .where(Download.status.in_(["downloading", "finalizing"]))
+                    .values(
+                        status="queued",
+                        progress=0.0,
+                        downloaded_bytes=0,
+                        total_bytes=0,
+                        speed_bps=0,
+                        started_at=None,
+                    )
+                )
+                await session.commit()
+                if result.rowcount > 0:
+                    logger.info(
+                        "Reset %d stale downloads to queued", result.rowcount
+                    )
+        except Exception as exc:
+            logger.error("Failed to reset stale statuses: %s", exc)
 
     async def enqueue(self, request: DownloadRequest) -> list[Download]:
         downloads = []
@@ -127,22 +169,20 @@ class DownloadService:
             query = select(Download)
             if statuses:
                 query = query.where(Download.status.in_(statuses))
-            # Order: downloading first, then queued, then rest by created_at desc
             query = query.order_by(
-                # CASE: downloading=0, queued=1, failed=2, cancelled=3, completed=4
-                Download.status.desc(),  # temporary, we sort in Python below
+                Download.status.desc(),
                 Download.created_at.desc(),
             )
             result = await session.execute(query)
             downloads = list(result.scalars().all())
 
-        # Custom sort: downloading > queued > failed/cancelled > completed
         status_order = {
             "downloading": 0,
-            "queued": 1,
-            "failed": 2,
-            "cancelled": 3,
-            "completed": 4,
+            "finalizing": 1,
+            "queued": 2,
+            "failed": 3,
+            "cancelled": 4,
+            "completed": 5,
         }
         downloads.sort(key=lambda d: (status_order.get(d.status, 99), -d.created_at.timestamp() if d.created_at else 0))
         return downloads
@@ -164,7 +204,6 @@ class DownloadService:
 
     async def cancel_all(self) -> int:
         """Cancel all queued and downloading tasks."""
-        # Cancel active tasks
         for task in list(self._active_tasks.values()):
             task.cancel()
         self._active_tasks.clear()
@@ -195,7 +234,6 @@ class DownloadService:
             download = await session.get(Download, download_id)
             if not download or download.status not in ("failed", "cancelled"):
                 return False
-            # Delete old files
             self._cleanup_download_files(download.file_path)
             result = await session.execute(
                 update(Download)
@@ -219,7 +257,6 @@ class DownloadService:
     async def retry_all_failed(self) -> int:
         """Reset all failed downloads to queued and clear retry count."""
         async with self._db() as session:
-            # First, clean up files for all failed downloads
             result = await session.execute(
                 select(Download).where(Download.status == "failed")
             )
@@ -277,36 +314,17 @@ class DownloadService:
             except Exception as exc:
                 logger.warning("Failed to clean up %s: %s", path, exc)
 
-    def get_disk_usage(self) -> dict:
-        """Get disk usage info for the download directory."""
-        try:
-            usage = shutil.disk_usage(self._download_dir)
-            return {
-                "total_bytes": usage.total,
-                "used_bytes": usage.used,
-                "free_bytes": usage.free,
-                "path": str(self._download_dir),
-            }
-        except Exception as exc:
-            logger.error("Failed to get disk usage: %s", exc)
-            return {
-                "total_bytes": 0,
-                "used_bytes": 0,
-                "free_bytes": 0,
-                "path": str(self._download_dir),
-            }
-
     async def _maybe_trigger_plex_scan(self) -> None:
-        """Trigger Plex library scan when no more queued/downloading items remain."""
+        """Trigger Plex library scan when no more active items remain."""
         try:
             async with self._db() as session:
                 result = await session.execute(
                     select(Download).where(
-                        Download.status.in_(["queued", "downloading"])
+                        Download.status.in_(["queued", "downloading", "finalizing"])
                     ).limit(1)
                 )
                 if result.scalars().first() is not None:
-                    return  # Still active downloads
+                    return  # Still active
             if await self._plex.is_configured():
                 await self._plex.trigger_library_scan()
         except Exception as exc:
@@ -359,7 +377,7 @@ class DownloadService:
             await asyncio.sleep(2)
 
     async def _download_one(self, download_id: int) -> None:
-        """Execute a single download with automatic retry on failure."""
+        """Download an episode to local temp, then enqueue NAS move."""
         async with self._db() as session:
             download = await session.get(Download, download_id)
             if not download or download.status != "queued":
@@ -398,8 +416,6 @@ class DownloadService:
                 speed_bps: int,
                 progress: float,
             ):
-                # Progress is in-memory + WebSocket only — no DB writes
-                # This eliminates SQLite WAL contention during concurrent downloads
                 await self._ws.broadcast({
                     "type": "progress",
                     "download_id": dl_info["id"],
@@ -409,13 +425,14 @@ class DownloadService:
                     "speed_bps": speed_bps,
                 })
 
-            file_path = await self._worker.download_episode(
+            # --- Download to LOCAL temp (fast, no NAS I/O) ---
+            local_path = await self._worker.download_episode(
                 episode_id=dl_info["episode_id"],
                 episode_number=dl_info["episode_number"],
                 episode_title=dl_info["episode_title"],
                 anime_title=dl_info["anime_title"],
                 anime_slug=dl_info["anime_slug"],
-                download_dir=self._download_dir,
+                download_dir=self._local_temp,
                 progress_callback=on_progress,
                 cover_url=dl_info["cover_url"],
                 genres=dl_info["genres"],
@@ -424,55 +441,100 @@ class DownloadService:
                 source_site=dl_info["source_site"],
             )
 
-            # Validate file exists and is a real video.
-            # os.sync + re-stat to bypass CIFS/NFS kernel cache that can report
-            # stale metadata on soft-mounted network shares.
-            import os
-            try:
-                os.sync()
-            except Exception:
-                pass
-            # Re-open and read first bytes to force a real I/O roundtrip
-            verified_size = 0
-            try:
-                with open(file_path, "rb") as f:
-                    header = f.read(8)  # force actual disk read
-                    f.seek(0, 2)  # seek to end
-                    verified_size = f.tell()
-            except OSError:
-                verified_size = 0
-
-            if verified_size < 50 * 1024:
-                file_path.unlink(missing_ok=True)
+            # --- Validate file locally (fast, no NAS) ---
+            file_size = local_path.stat().st_size
+            if file_size < 50 * 1024:
+                local_path.unlink(missing_ok=True)
                 raise RuntimeError(
-                    f"Output file missing or too small ({verified_size} bytes) — "
-                    f"network storage may have dropped writes"
+                    f"Output file too small ({file_size} bytes)"
                 )
 
+            # --- Compute NAS destination ---
+            relative = local_path.relative_to(self._local_temp)
+            nas_path = self._download_dir / relative
+
+            # --- Set status to "finalizing" and release download slot ---
             await _db_execute_with_retry(
                 self._db,
                 update(Download)
                 .where(Download.id == dl_info["id"])
-                .values(
-                    status="completed",
-                    progress=100.0,
-                    file_path=str(file_path),
-                    completed_at=datetime.utcnow(),
-                ),
+                .values(status="finalizing", progress=100.0),
             )
 
             await self._ws.broadcast({
                 "type": "status_change",
                 "download_id": dl_info["id"],
-                "status": "completed",
-                "file_path": str(file_path),
-                "completed_at": datetime.utcnow().isoformat(),
+                "status": "finalizing",
             })
 
-            logger.info("Download completed: %s EP%s", dl_info["anime_title"], dl_info["episode_number"])
+            logger.info(
+                "Download done locally, enqueueing NAS move: %s EP%s",
+                dl_info["anime_title"],
+                dl_info["episode_number"],
+            )
 
-            # Trigger Plex scan if queue is now empty
-            await self._maybe_trigger_plex_scan()
+            # --- Enqueue non-blocking NAS move ---
+            async def on_move_success(final_path: Path) -> None:
+                await _db_execute_with_retry(
+                    self._db,
+                    update(Download)
+                    .where(Download.id == dl_info["id"])
+                    .values(
+                        status="completed",
+                        file_path=str(final_path),
+                        completed_at=datetime.utcnow(),
+                    ),
+                )
+                await self._ws.broadcast({
+                    "type": "status_change",
+                    "download_id": dl_info["id"],
+                    "status": "completed",
+                    "file_path": str(final_path),
+                    "completed_at": datetime.utcnow().isoformat(),
+                })
+                logger.info(
+                    "NAS move completed: %s EP%s -> %s",
+                    dl_info["anime_title"],
+                    dl_info["episode_number"],
+                    final_path,
+                )
+                await self._maybe_trigger_plex_scan()
+
+            async def on_move_failure(exc: Exception) -> None:
+                # Clean up local temp file
+                try:
+                    local_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                await _db_execute_with_retry(
+                    self._db,
+                    update(Download)
+                    .where(Download.id == dl_info["id"])
+                    .values(
+                        status="failed",
+                        error_message=f"NAS move failed: {exc}",
+                    ),
+                )
+                await self._ws.broadcast({
+                    "type": "error",
+                    "download_id": dl_info["id"],
+                    "status": "failed",
+                    "error_message": f"NAS move failed: {exc}",
+                })
+                logger.error(
+                    "NAS move failed for %s EP%s: %s",
+                    dl_info["anime_title"],
+                    dl_info["episode_number"],
+                    exc,
+                )
+
+            await self._nas_queue.enqueue_move(
+                local_path=local_path,
+                nas_path=nas_path,
+                on_success=on_move_success,
+                on_failure=on_move_failure,
+            )
+            # Download slot is released here — NAS move proceeds independently
 
         except asyncio.CancelledError:
             await _db_execute_with_retry(
@@ -487,11 +549,10 @@ class DownloadService:
             error_msg = str(exc)
             retry_count = dl_info["retry_count"]
 
-            # Clean up partial / corrupt files on failure
+            # Clean up partial files from local temp
             self._cleanup_partial_files(dl_info["anime_title"], dl_info["episode_number"])
 
             if retry_count < MAX_AUTO_RETRIES:
-                # Schedule automatic retry
                 next_retry = retry_count + 1
                 wait = RETRY_BACKOFF_BASE * next_retry
                 logger.warning(
@@ -523,10 +584,8 @@ class DownloadService:
                     "error_message": f"Retrying ({next_retry}/{MAX_AUTO_RETRIES})...",
                 })
 
-                # Wait before retry to let server recover
                 await asyncio.sleep(wait)
             else:
-                # Max retries exhausted — mark as permanently failed
                 logger.error(
                     "Download permanently failed for %s EP%s after %d retries: %s",
                     dl_info["anime_title"], dl_info["episode_number"],
@@ -556,13 +615,14 @@ class DownloadService:
 
         try:
             relative_path = episode_filename(anime_title, episode_number, 100)
-            base_path = self._download_dir / relative_path
+            # Clean from local temp (where downloads happen now)
+            base_path = self._local_temp / relative_path
             parent = base_path.parent
 
             if not parent.exists():
                 return
 
-            stem = base_path.stem  # e.g. "EP001"
+            stem = base_path.stem
             for f in parent.iterdir():
                 if f.name.startswith(stem) and (
                     f.suffix == ".part"

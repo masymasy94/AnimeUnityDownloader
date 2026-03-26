@@ -3,6 +3,7 @@
 from fastapi import Request
 
 from ..services.download_service import DownloadService
+from ..services.nas_queue import NasIOQueue
 from ..services.providers import ProviderRegistry
 from ..services.settings_service import SettingsService
 from ..services.tracker_service import TrackerService
@@ -15,6 +16,10 @@ def get_provider_registry(request: Request) -> ProviderRegistry:
 
 def get_download_service(request: Request) -> DownloadService:
     return request.app.state.download_service
+
+
+def get_nas_queue(request: Request) -> NasIOQueue:
+    return request.app.state.nas_queue
 
 
 def get_settings_service(request: Request) -> SettingsService:

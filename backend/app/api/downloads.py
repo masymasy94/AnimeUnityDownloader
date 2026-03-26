@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -7,7 +8,8 @@ from pydantic import BaseModel
 from ..config import settings
 from ..schemas.download import DownloadRequest, DownloadStatus, DownloadsResponse
 from ..services.download_service import DownloadService
-from .deps import get_download_service
+from ..services.nas_queue import NasIOQueue
+from .deps import get_download_service, get_nas_queue
 
 router = APIRouter()
 
@@ -22,10 +24,13 @@ def _to_host_path(container_path: str | None) -> str | None:
     return container_path
 
 
-def _enrich(dl) -> DownloadStatus:
+async def _enrich(dl, nas_queue: NasIOQueue) -> DownloadStatus:
     status = DownloadStatus.model_validate(dl)
     status.host_file_path = _to_host_path(status.file_path)
-    status.file_exists = bool(status.file_path and Path(status.file_path).is_file())
+    if status.file_path and status.status == "completed":
+        status.file_exists = await nas_queue.check_file_exists(status.file_path)
+    else:
+        status.file_exists = False
     return status
 
 
@@ -38,8 +43,8 @@ class DiskUsageResponse(BaseModel):
 
 
 @router.get("/disk-usage", response_model=DiskUsageResponse)
-async def disk_usage(svc: DownloadService = Depends(get_download_service)):
-    info = svc.get_disk_usage()
+async def disk_usage(nas_queue: NasIOQueue = Depends(get_nas_queue)):
+    info = await nas_queue.get_disk_usage()
     return DiskUsageResponse(
         total_bytes=info["total_bytes"],
         used_bytes=info["used_bytes"],
@@ -53,10 +58,9 @@ async def disk_usage(svc: DownloadService = Depends(get_download_service)):
 async def create_downloads(
     request: DownloadRequest,
     svc: DownloadService = Depends(get_download_service),
+    nas_queue: NasIOQueue = Depends(get_nas_queue),
 ):
-    # Check disk space before enqueuing
-    disk = svc.get_disk_usage()
-    # Estimate ~500MB per episode as safety margin
+    disk = await nas_queue.get_disk_usage()
     estimated_bytes = len(request.episodes) * 500 * 1024 * 1024
     if disk["free_bytes"] < estimated_bytes:
         free_gb = disk["free_bytes"] / (1024**3)
@@ -67,16 +71,19 @@ async def create_downloads(
         )
 
     downloads = await svc.enqueue(request)
-    return DownloadsResponse(downloads=[_enrich(d) for d in downloads])
+    enriched = await asyncio.gather(*[_enrich(d, nas_queue) for d in downloads])
+    return DownloadsResponse(downloads=list(enriched))
 
 
 @router.get("/downloads", response_model=DownloadsResponse)
 async def list_downloads(
     status: list[str] | None = Query(None),
     svc: DownloadService = Depends(get_download_service),
+    nas_queue: NasIOQueue = Depends(get_nas_queue),
 ):
     downloads = await svc.get_downloads(status)
-    return DownloadsResponse(downloads=[_enrich(d) for d in downloads])
+    enriched = await asyncio.gather(*[_enrich(d, nas_queue) for d in downloads])
+    return DownloadsResponse(downloads=list(enriched))
 
 
 @router.post("/downloads/cancel-all")

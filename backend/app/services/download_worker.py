@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import time
 from collections.abc import Callable
@@ -15,6 +14,15 @@ logger = logging.getLogger(__name__)
 CHUNK_SIZE = 128 * 1024  # 128KB
 MIN_VIDEO_SIZE = 50 * 1024  # 50KB – anything smaller is certainly not a real video
 VALID_VIDEO_CONTENT_TYPES = {"video/", "application/octet-stream", "binary/octet-stream"}
+
+# Stream-level retry settings (for connection drops during download)
+MAX_STREAM_RETRIES = 5
+STREAM_RETRY_BASE_DELAY = 5  # seconds (5, 10, 15, …)
+STREAM_TIMEOUT = 300  # 5 minutes — large files on slow connections need headroom
+
+# HLS segment retry
+MAX_SEGMENT_RETRIES = 3
+SEGMENT_RETRY_DELAY = 3  # seconds
 
 
 class DownloadWorker:
@@ -63,11 +71,11 @@ class DownloadWorker:
         # Download based on source type
         if source.type == "direct_mp4":
             raw_path = final_path.with_suffix(".mp4.raw")
-            await self._download_mp4(source, raw_path, progress_callback, provider)
+            await self._download_mp4(source, raw_path, progress_callback)
         else:
             # M3U8/HLS - download and convert
             raw_path = final_path.with_suffix(".mp4.raw")
-            await self._download_m3u8(source, raw_path, progress_callback, provider)
+            await self._download_m3u8(source, raw_path, progress_callback)
 
         # Embed metadata
         show_name, season = extract_season(anime_title)
@@ -99,72 +107,123 @@ class DownloadWorker:
         source: VideoSource,
         dest_path: Path,
         progress_callback: Callable | None,
-        provider=None,
     ) -> None:
-        """Download a direct MP4 file with resume support."""
+        """Download a direct MP4 file with dedicated session and stream-level resume.
+
+        Each download attempt creates its own isolated curl-cffi session so that
+        shared-session lifecycle events (CSRF refresh, connection pool reuse)
+        cannot corrupt the streaming file descriptor.
+        """
+        from curl_cffi.requests import AsyncSession
+
         part_path = dest_path.with_suffix(dest_path.suffix + ".part")
-
-        # Check for existing partial download
-        start_byte = 0
-        if part_path.exists():
-            start_byte = part_path.stat().st_size
-            logger.info("Resuming download from byte %d", start_byte)
-
-        headers = dict(source.headers) if source.headers else {}
-        if start_byte > 0:
-            headers["Range"] = f"bytes={start_byte}-"
-
-        session = await provider.get_http_session()
-        response = await session.get(source.url, headers=headers, stream=True)
-
-        # Validate HTTP response status
-        status_code = response.status_code
-        if status_code >= 400:
-            raise DownloadError(
-                f"Server returned HTTP {status_code} "
-                f"(expected 200/206)"
-            )
-
-        # Validate content-type (reject HTML error pages)
-        content_type = response.headers.get("Content-Type", "").lower()
-        if "text/html" in content_type:
-            raise DownloadError(
-                f"Server returned HTML instead of video "
-                f"(Content-Type: {content_type}, HTTP {status_code})"
-            )
-
-        # Get total size
         total_bytes = 0
-        content_range = response.headers.get("Content-Range", "")
-        if content_range and "/" in content_range:
-            total_bytes = int(content_range.split("/")[-1])
-        elif start_byte == 0:
-            content_length = response.headers.get("Content-Length", "0")
-            total_bytes = int(content_length)
 
-        downloaded = start_byte
-        last_report = time.monotonic()
-        last_bytes = downloaded
+        for attempt in range(1, MAX_STREAM_RETRIES + 1):
+            start_byte = part_path.stat().st_size if part_path.exists() else 0
 
-        mode = "ab" if start_byte > 0 else "wb"
-        with open(part_path, mode) as f:
-            async for chunk in response.aiter_content():
-                f.write(chunk)
-                downloaded += len(chunk)
+            headers = dict(source.headers) if source.headers else {}
+            if start_byte > 0:
+                headers["Range"] = f"bytes={start_byte}-"
 
-                now = time.monotonic()
-                elapsed = now - last_report
-                if elapsed >= 0.5 and progress_callback:
-                    speed = int((downloaded - last_bytes) / elapsed)
-                    progress = (downloaded / total_bytes * 100) if total_bytes else 0
-                    await progress_callback(
-                        downloaded_bytes=downloaded,
-                        total_bytes=total_bytes,
-                        speed_bps=speed,
-                        progress=progress,
+            # Dedicated session per attempt — never shares fds with the provider
+            stream_session = AsyncSession(
+                impersonate="chrome", timeout=STREAM_TIMEOUT
+            )
+            try:
+                response = await stream_session.get(
+                    source.url, headers=headers, stream=True
+                )
+
+                status_code = response.status_code
+                if status_code >= 400:
+                    raise DownloadError(
+                        f"Server returned HTTP {status_code} (expected 200/206)"
                     )
-                    last_report = now
-                    last_bytes = downloaded
+
+                content_type = response.headers.get("Content-Type", "").lower()
+                if "text/html" in content_type:
+                    raise DownloadError(
+                        f"Server returned HTML instead of video "
+                        f"(Content-Type: {content_type}, HTTP {status_code})"
+                    )
+
+                # Server ignored Range header — must restart from scratch
+                if start_byte > 0 and status_code == 200:
+                    logger.info("Server ignored Range header, restarting download")
+                    start_byte = 0
+                    if part_path.exists():
+                        part_path.unlink()
+
+                # Determine total size (first successful response wins)
+                if total_bytes == 0:
+                    content_range = response.headers.get("Content-Range", "")
+                    if content_range and "/" in content_range:
+                        total_bytes = int(content_range.split("/")[-1])
+                    elif start_byte == 0:
+                        total_bytes = int(
+                            response.headers.get("Content-Length", "0")
+                        )
+
+                downloaded = start_byte
+                last_report = time.monotonic()
+                last_bytes = downloaded
+
+                mode = "ab" if start_byte > 0 and status_code == 206 else "wb"
+                with open(part_path, mode) as f:
+                    async for chunk in response.aiter_content():
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+                        now = time.monotonic()
+                        elapsed = now - last_report
+                        if elapsed >= 0.5 and progress_callback:
+                            speed = int((downloaded - last_bytes) / elapsed)
+                            progress = (
+                                (downloaded / total_bytes * 100)
+                                if total_bytes
+                                else 0
+                            )
+                            await progress_callback(
+                                downloaded_bytes=downloaded,
+                                total_bytes=total_bytes,
+                                speed_bps=speed,
+                                progress=progress,
+                            )
+                            last_report = now
+                            last_bytes = downloaded
+
+                # Stream completed successfully
+                break
+
+            except DownloadError:
+                raise  # HTTP 4xx / HTML responses — not retryable at stream level
+
+            except Exception as exc:
+                current_size = (
+                    part_path.stat().st_size if part_path.exists() else 0
+                )
+                if attempt < MAX_STREAM_RETRIES:
+                    delay = STREAM_RETRY_BASE_DELAY * attempt
+                    logger.warning(
+                        "Stream interrupted at %d bytes (attempt %d/%d): %s "
+                        "— resuming in %ds",
+                        current_size,
+                        attempt,
+                        MAX_STREAM_RETRIES,
+                        exc,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    raise DownloadError(
+                        f"Stream failed after {MAX_STREAM_RETRIES} attempts: {exc}"
+                    )
+            finally:
+                try:
+                    await stream_session.close()
+                except Exception:
+                    pass
 
         # Validate downloaded file size
         actual_size = part_path.stat().st_size
@@ -178,8 +237,8 @@ class DownloadWorker:
         # Final progress report
         if progress_callback:
             await progress_callback(
-                downloaded_bytes=downloaded,
-                total_bytes=total_bytes,
+                downloaded_bytes=actual_size,
+                total_bytes=total_bytes or actual_size,
                 speed_bps=0,
                 progress=100.0,
             )
@@ -192,48 +251,62 @@ class DownloadWorker:
         source: VideoSource,
         dest_path: Path,
         progress_callback: Callable | None,
-        provider=None,
     ) -> None:
-        """Download M3U8/HLS stream and convert to MP4."""
+        """Download M3U8/HLS stream and convert to MP4.
+
+        Uses a dedicated session and per-segment retry.
+        """
         import m3u8
+        from curl_cffi.requests import AsyncSession
 
         headers = dict(source.headers) if source.headers else {}
-        session = await provider.get_http_session()
 
-        # Fetch master playlist
-        response = await session.get(source.url, headers=headers)
-        playlist = m3u8.loads(response.text, uri=source.url)
+        session = AsyncSession(impersonate="chrome", timeout=60)
+        try:
+            # Fetch master playlist
+            response = await session.get(source.url, headers=headers)
+            playlist = m3u8.loads(response.text, uri=source.url)
 
-        # Select best quality
-        if playlist.playlists:
-            # Sort by bandwidth (highest first)
-            best = max(playlist.playlists, key=lambda p: p.stream_info.bandwidth or 0)
-            response = await session.get(best.absolute_uri, headers=headers)
-            playlist = m3u8.loads(response.text, uri=best.absolute_uri)
+            # Select best quality
+            if playlist.playlists:
+                best = max(
+                    playlist.playlists,
+                    key=lambda p: p.stream_info.bandwidth or 0,
+                )
+                response = await session.get(best.absolute_uri, headers=headers)
+                playlist = m3u8.loads(response.text, uri=best.absolute_uri)
 
-        segments = playlist.segments
-        total_segments = len(segments)
-        if total_segments == 0:
-            raise ValueError("No segments found in M3U8 playlist")
+            segments = playlist.segments
+            total_segments = len(segments)
+            if total_segments == 0:
+                raise ValueError("No segments found in M3U8 playlist")
 
-        # Download all segments to a temp file
-        ts_path = dest_path.with_suffix(".ts")
-        downloaded_segments = 0
+            # Download all segments to a temp file
+            ts_path = dest_path.with_suffix(".ts")
+            downloaded_segments = 0
 
-        with open(ts_path, "wb") as f:
-            for segment in segments:
-                seg_response = await session.get(segment.absolute_uri, headers=headers)
-                f.write(seg_response.content)
-                downloaded_segments += 1
-
-                if progress_callback:
-                    progress = downloaded_segments / total_segments * 100
-                    await progress_callback(
-                        downloaded_bytes=downloaded_segments,
-                        total_bytes=total_segments,
-                        speed_bps=0,
-                        progress=progress,
+            with open(ts_path, "wb") as f:
+                for segment in segments:
+                    # Per-segment retry
+                    seg_data = await self._download_segment(
+                        session, segment.absolute_uri, headers
                     )
+                    f.write(seg_data)
+                    downloaded_segments += 1
+
+                    if progress_callback:
+                        progress = downloaded_segments / total_segments * 100
+                        await progress_callback(
+                            downloaded_bytes=downloaded_segments,
+                            total_bytes=total_segments,
+                            speed_bps=0,
+                            progress=progress,
+                        )
+        finally:
+            try:
+                await session.close()
+            except Exception:
+                pass
 
         # Remux TS to MP4 with ffmpeg
         process = await asyncio.create_subprocess_exec(
@@ -248,6 +321,27 @@ class DownloadWorker:
 
         if process.returncode != 0:
             raise RuntimeError("ffmpeg remux failed")
+
+    @staticmethod
+    async def _download_segment(
+        session, url: str, headers: dict
+    ) -> bytes:
+        """Download a single HLS segment with retry."""
+        for attempt in range(1, MAX_SEGMENT_RETRIES + 1):
+            try:
+                response = await session.get(url, headers=headers)
+                return response.content
+            except Exception as exc:
+                if attempt < MAX_SEGMENT_RETRIES:
+                    logger.warning(
+                        "Segment download failed (attempt %d/%d): %s",
+                        attempt,
+                        MAX_SEGMENT_RETRIES,
+                        exc,
+                    )
+                    await asyncio.sleep(SEGMENT_RETRY_DELAY)
+                else:
+                    raise
 
 
 class DownloadError(Exception):
