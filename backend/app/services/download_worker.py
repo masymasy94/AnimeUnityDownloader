@@ -19,6 +19,7 @@ VALID_VIDEO_CONTENT_TYPES = {"video/", "application/octet-stream", "binary/octet
 MAX_STREAM_RETRIES = 5
 STREAM_RETRY_BASE_DELAY = 5  # seconds (5, 10, 15, …)
 STREAM_TIMEOUT = 300  # 5 minutes — large files on slow connections need headroom
+STALL_TIMEOUT = 60  # seconds with no data before we consider the stream dead
 
 # HLS segment retry
 MAX_SEGMENT_RETRIES = 3
@@ -171,7 +172,19 @@ class DownloadWorker:
 
                 mode = "ab" if start_byte > 0 and status_code == 206 else "wb"
                 with open(part_path, mode) as f:
-                    async for chunk in response.aiter_content():
+                    chunk_iter = response.aiter_content().__aiter__()
+                    while True:
+                        try:
+                            chunk = await asyncio.wait_for(
+                                chunk_iter.__anext__(), timeout=STALL_TIMEOUT
+                            )
+                        except StopAsyncIteration:
+                            break
+                        except asyncio.TimeoutError:
+                            raise TimeoutError(
+                                f"Stream stalled — no data for {STALL_TIMEOUT}s "
+                                f"(downloaded {downloaded} bytes so far)"
+                            )
                         f.write(chunk)
                         downloaded += len(chunk)
 
