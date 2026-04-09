@@ -32,6 +32,11 @@ class Download(Base):
     max_retries: Mapped[int] = mapped_column(Integer, default=5)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Overrides used by scheduled downloads to bypass Plex layout.
+    dest_folder_override: Mapped[str | None] = mapped_column(Text, nullable=True)
+    filename_template: Mapped[str | None] = mapped_column(Text, nullable=True)
+    filename_template_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scheduled_download_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
     )
