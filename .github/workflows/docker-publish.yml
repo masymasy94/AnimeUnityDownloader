@@ -45,6 +45,48 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+  build-firetv-apk:
+    if: contains(github.event.head_commit.message, 'RELEASE')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        working-directory: firetv
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: |
+          APK_PATH=$(find firetv/app/build/outputs/apk -name "*.apk" | head -1)
+          cp "$APK_PATH" firetv/AnimeHub-TV.apk
+
+      - name: Update latest release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Release
+          body: |
+            Auto-generated from `${{ github.sha }}`.
+
+            **Fire TV**: scarica `AnimeHub-TV.apk` e installa con Downloader o `adb install`.
+          files: firetv/AnimeHub-TV.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   deploy:
     needs: build-and-push
     if: contains(github.event.head_commit.message, 'RELEASE')
