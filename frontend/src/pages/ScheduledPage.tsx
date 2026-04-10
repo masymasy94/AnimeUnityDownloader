@@ -36,6 +36,7 @@ export function ScheduledPage() {
   const [cronValid, setCronValid] = useState(true);
   const [cronNexts, setCronNexts] = useState<string[]>([]);
   const [cronSaving, setCronSaving] = useState(false);
+  const [cronError, setCronError] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['scheduled'],
@@ -43,7 +44,7 @@ export function ScheduledPage() {
     refetchInterval: 30000,
   });
 
-  // Sync cron input from server
+  // Sync cron input from server on load
   useEffect(() => {
     if (data?.cron_expr && cronInput === '') {
       setCronInput(data.cron_expr);
@@ -64,12 +65,14 @@ export function ScheduledPage() {
     return () => clearTimeout(timer);
   }, [cronInput]);
 
-  const handleSaveCron = async () => {
-    if (!cronValid || !cronInput) return;
+  const saveCron = async (expr: string) => {
     setCronSaving(true);
+    setCronError(null);
     try {
-      await setCron(cronInput);
+      await setCron(expr);
       queryClient.invalidateQueries({ queryKey: ['scheduled'] });
+    } catch (e) {
+      setCronError((e as Error).message);
     } finally {
       setCronSaving(false);
     }
@@ -128,7 +131,7 @@ export function ScheduledPage() {
   }
 
   const schedules = data?.scheduled ?? [];
-  const cronChanged = data?.cron_expr !== cronInput;
+  const cronChanged = !!data?.cron_expr && data.cron_expr !== cronInput;
 
   return (
     <div className="space-y-6">
@@ -163,14 +166,17 @@ export function ScheduledPage() {
             <span className="text-sm font-medium text-text-white">Frequenza controllo:</span>
           </div>
 
+          {/* Dropdown — auto-salva alla selezione */}
           <select
             value={FREQUENCY_OPTIONS.find((o) => o.expr === cronInput) ? cronInput : '__custom__'}
+            disabled={cronSaving}
             onChange={(e) => {
               if (e.target.value !== '__custom__') {
                 setCronInput(e.target.value);
+                saveCron(e.target.value);
               }
             }}
-            className="px-2 py-1.5 text-xs bg-bg-card border border-border rounded text-text-white"
+            className="px-2 py-1.5 text-xs bg-bg-card border border-border rounded text-text-white disabled:opacity-50"
           >
             {FREQUENCY_OPTIONS.map((o) => (
               <option key={o.expr} value={o.expr}>{o.label}</option>
@@ -180,7 +186,7 @@ export function ScheduledPage() {
             )}
           </select>
 
-          {/* Input cron manuale piccolo */}
+          {/* Input cron manuale */}
           <input
             value={cronInput}
             onChange={(e) => setCronInput(e.target.value)}
@@ -190,14 +196,19 @@ export function ScheduledPage() {
             }`}
           />
 
+          {/* Bottone salva per input manuale */}
           {cronChanged && cronValid && (
             <button
-              onClick={handleSaveCron}
+              onClick={() => saveCron(cronInput)}
               disabled={cronSaving}
               className="px-3 py-1 text-[11px] bg-accent text-white rounded disabled:opacity-50"
             >
               {cronSaving ? 'Salvo...' : 'Salva'}
             </button>
+          )}
+
+          {cronSaving && (
+            <span className="text-[11px] text-accent">Salvando...</span>
           )}
 
           <div className="flex items-center gap-1.5 ml-auto">
@@ -210,6 +221,9 @@ export function ScheduledPage() {
           </div>
         </div>
 
+        {cronError && (
+          <div className="mt-2 text-[11px] text-error">{cronError}</div>
+        )}
         {cronValid && cronNexts.length > 0 && (
           <div className="mt-2 text-[10px] text-text-secondary">
             Prossime 3 esecuzioni: {cronNexts.map((t) => new Date(t).toLocaleString()).join(' · ')}
