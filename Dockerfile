@@ -9,9 +9,9 @@ RUN npm run build
 # Stage 2: Production
 FROM python:3.12-slim AS production
 
-# Install ffmpeg (metadata embedding + M3U8 remux) and curl (healthcheck)
+# Install ffmpeg (metadata embedding + M3U8 remux), curl (healthcheck), tzdata (local TZ)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg curl && \
+    apt-get install -y --no-install-recommends ffmpeg curl tzdata && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
