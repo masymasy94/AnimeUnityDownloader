@@ -59,6 +59,8 @@ dependencies {
 
     // Compose for TV
     implementation(libs.tv.material)
+    // Standard Material3 for components not in tv-material (CircularProgressIndicator)
+    implementation("androidx.compose.material3:material3")
 
     // Media3 (ExoPlayer)
     implementation(libs.media3.exoplayer)
