@@ -17,6 +17,7 @@ from .services.providers.animeunity_provider import AnimeUnityProvider
 from .services.providers.animeworld_provider import AnimeWorldProvider
 from .services.providers.animesaturn_provider import AnimeSaturnProvider
 from .services.settings_service import SettingsService
+from .services.scheduled_download_service import ScheduledDownloadService
 from .services.tracker_service import TrackerService
 from .services.ws_manager import WebSocketManager
 from .api.router import api_router
@@ -85,10 +86,19 @@ async def lifespan(app: FastAPI):
     app.state.tracker_service = tracker_service
     tracker_service.start()
 
+    scheduled_download_service = ScheduledDownloadService(
+        db_session_factory=async_session,
+        provider_registry=registry,
+        download_service=download_service,
+    )
+    app.state.scheduled_download_service = scheduled_download_service
+    scheduled_download_service.start()
+
     logger.info("Ready — UI at http://0.0.0.0:8000")
     yield
 
     # Cleanup
+    await scheduled_download_service.stop()
     await tracker_service.stop()
     await download_service.stop()
     await nas_queue.stop()

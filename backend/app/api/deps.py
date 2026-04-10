@@ -34,5 +34,9 @@ def get_tracker_service(request: Request) -> TrackerService:
     return request.app.state.tracker_service
 
 
+def get_scheduled_download_service(request: Request):
+    return request.app.state.scheduled_download_service
+
+
 def get_db_session_factory(request: Request):
     return request.app.state.db_session_factory
