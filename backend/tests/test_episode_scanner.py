@@ -48,13 +48,40 @@ def test_recurses_into_season_subfolders(tmp_path: Path) -> None:
 
 
 def test_underscore_ep_pattern(tmp_path: Path) -> None:
-    """Matches filenames like KoorinoJouheki_Ep_01_SUB_ITA.mp4"""
+    """AnimeUnity/AnimeSaturn style: KoorinoJouheki_Ep_01_SUB_ITA.mp4"""
     (tmp_path / "KoorinoJouheki_Ep_01_SUB_ITA.mp4").write_bytes(b"")
     (tmp_path / "KoorinoJouheki_Ep_03_SUB_ITA.mp4").write_bytes(b"")
     assert highest_episode(tmp_path) == 3
 
 
 def test_dot_separated_ep_pattern(tmp_path: Path) -> None:
-    """Matches filenames like Show.Ep.05.mp4"""
+    """Show.Ep.05.mp4"""
     (tmp_path / "Show.Ep.05.mp4").write_bytes(b"")
+    assert highest_episode(tmp_path) == 5
+
+
+def test_fansub_bracket_style(tmp_path: Path) -> None:
+    """[SubGroup] Show - 01 [1080p].mp4"""
+    (tmp_path / "[SubGroup] Show - 01 [1080p].mp4").write_bytes(b"")
+    (tmp_path / "[SubGroup] Show - 12 [1080p].mp4").write_bytes(b"")
+    assert highest_episode(tmp_path) == 12
+
+
+def test_underscore_number_pattern(tmp_path: Path) -> None:
+    """ShowName_03_ITA.mp4"""
+    (tmp_path / "ShowName_03_ITA.mp4").write_bytes(b"")
+    (tmp_path / "ShowName_07_ITA.mp4").write_bytes(b"")
+    assert highest_episode(tmp_path) == 7
+
+
+def test_episode_word_pattern(tmp_path: Path) -> None:
+    """Show Episode 12.mp4 / Show Episodio 3.mp4"""
+    (tmp_path / "Show Episode 12.mp4").write_bytes(b"")
+    (tmp_path / "Show Episodio 3.mp4").write_bytes(b"")
+    assert highest_episode(tmp_path) == 12
+
+
+def test_dot_separated_season_episode(tmp_path: Path) -> None:
+    """Show.S01E05.720p.mp4"""
+    (tmp_path / "Show.S01E05.720p.mp4").write_bytes(b"")
     assert highest_episode(tmp_path) == 5

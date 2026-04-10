@@ -19,6 +19,8 @@ from .deps import get_scheduled_download_service
 router = APIRouter()
 
 
+# ── Static routes MUST come before {schedule_id} to avoid path collision ──
+
 @router.get("/scheduled", response_model=ScheduleListResponse)
 async def list_schedules(
     svc: ScheduledDownloadService = Depends(get_scheduled_download_service),
@@ -44,6 +46,48 @@ async def create_schedule(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _to_response(row)
 
+
+@router.get("/scheduled/cron")
+async def get_cron(
+    svc: ScheduledDownloadService = Depends(get_scheduled_download_service),
+):
+    cron = await svc.get_cron()
+    next_run = await svc.get_next_run()
+    return {"cron_expr": cron, "next_run_at": next_run}
+
+
+@router.put("/scheduled/cron")
+async def set_cron(
+    request: CronUpdateRequest,
+    svc: ScheduledDownloadService = Depends(get_scheduled_download_service),
+):
+    try:
+        expr = await svc.set_cron(request.cron_expr)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    next_run = await svc.get_next_run()
+    return {"cron_expr": expr, "next_run_at": next_run}
+
+
+@router.get("/scheduled/validate-cron", response_model=CronValidationResponse)
+async def validate_cron(expr: str):
+    if not croniter.is_valid(expr):
+        return CronValidationResponse(valid=False, error="Invalid cron expression")
+    base = datetime.now()
+    it = croniter(expr, base)
+    nexts = [it.get_next(datetime) for _ in range(3)]
+    return CronValidationResponse(valid=True, next_runs=nexts)
+
+
+@router.post("/scheduled/run-all", response_model=RunAllNowResponse)
+async def run_all_now(
+    svc: ScheduledDownloadService = Depends(get_scheduled_download_service),
+):
+    total = await svc.run_all_now()
+    return RunAllNowResponse(total_enqueued=total)
+
+
+# ── Dynamic {schedule_id} routes ──
 
 @router.put("/scheduled/{schedule_id}", response_model=ScheduleResponse)
 async def update_schedule(
@@ -77,46 +121,6 @@ async def run_now(
 ):
     enqueued, reason = await svc.run_now(schedule_id)
     return RunNowResponse(enqueued_episodes=enqueued, skipped_reason=reason)
-
-
-@router.post("/scheduled/run-all", response_model=RunAllNowResponse)
-async def run_all_now(
-    svc: ScheduledDownloadService = Depends(get_scheduled_download_service),
-):
-    total = await svc.run_all_now()
-    return RunAllNowResponse(total_enqueued=total)
-
-
-@router.get("/scheduled/cron")
-async def get_cron(
-    svc: ScheduledDownloadService = Depends(get_scheduled_download_service),
-):
-    cron = await svc.get_cron()
-    next_run = await svc.get_next_run()
-    return {"cron_expr": cron, "next_run_at": next_run}
-
-
-@router.put("/scheduled/cron")
-async def set_cron(
-    request: CronUpdateRequest,
-    svc: ScheduledDownloadService = Depends(get_scheduled_download_service),
-):
-    try:
-        expr = await svc.set_cron(request.cron_expr)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    next_run = await svc.get_next_run()
-    return {"cron_expr": expr, "next_run_at": next_run}
-
-
-@router.get("/scheduled/validate-cron", response_model=CronValidationResponse)
-async def validate_cron(expr: str):
-    if not croniter.is_valid(expr):
-        return CronValidationResponse(valid=False, error="Invalid cron expression")
-    base = datetime.now()
-    it = croniter(expr, base)
-    nexts = [it.get_next(datetime) for _ in range(3)]
-    return CronValidationResponse(valid=True, next_runs=nexts)
 
 
 def _to_response(row) -> ScheduleResponse:

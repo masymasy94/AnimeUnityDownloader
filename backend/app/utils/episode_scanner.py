@@ -4,13 +4,19 @@ from pathlib import Path
 
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm"}
 
-# Match patterns:
-#   "Show - S01E010" / "S01E10"   → captures 10
-#   "Show 10" / "Show - 10"       → captures 10
-#   "E10" / "EP10" / "Ep 10"      → captures 10
-_SE_RE = re.compile(r"[Ss]\d{1,2}[Ee](\d{1,4})")
-_EP_RE = re.compile(r"(?:[Ee][Pp]?|[Ee]pisodio)[\s_.-]*(\d{1,4})")
-_TRAILING_NUM_RE = re.compile(r"(\d{1,4})(?=\s*\.[^.]+$)")
+# Ordered by specificity — most specific patterns first.
+_PATTERNS = [
+    # S01E010, S1E10, s01e010
+    re.compile(r"[Ss]\d{1,2}[Ee](\d{1,4})"),
+    # Ep_01, EP.05, Ep 3, Episode 12, Episodio 3
+    re.compile(r"(?:[Ee]pisod(?:e|io)|[Ee][Pp])[\s_.\-]*(\d{1,4})"),
+    # " - 01 ", " - 01.", " - 01[" — fansub style: [Group] Show - 01 [1080p].mp4
+    re.compile(r"[\s_]-[\s_](\d{1,4})(?=[\s_.\[\]])"),
+    # _03_ or .03. — surrounded by separators: ShowName_03_ITA.mp4
+    re.compile(r"[\s_.\-](\d{1,4})[\s_.\-]"),
+    # Trailing number before extension: Show 07.mp4
+    re.compile(r"(\d{1,4})(?=\s*\.[^.]+$)"),
+]
 
 
 def highest_episode(folder: Path) -> int:
@@ -37,7 +43,7 @@ def highest_episode(folder: Path) -> int:
 
 
 def _extract_episode_number(filename: str) -> int | None:
-    for regex in (_SE_RE, _EP_RE, _TRAILING_NUM_RE):
+    for regex in _PATTERNS:
         match = regex.search(filename)
         if match:
             try:
