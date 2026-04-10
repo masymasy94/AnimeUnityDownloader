@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ..config import settings
 from ..schemas.filesystem import BrowseResponse, FolderEntry, MkdirRequest
+from ..utils.episode_scanner import highest_episode
 from ..utils.safe_path import PathOutsideBaseError, resolve_inside
 
 router = APIRouter()
@@ -79,3 +80,17 @@ async def mkdir(request: MkdirRequest) -> BrowseResponse:
 
     new_folder.mkdir(parents=False, exist_ok=True)
     return await browse(path=_relative_to_base(parent))
+
+
+@router.get("/filesystem/highest-episode")
+async def get_highest_episode(path: str = Query(default="")):
+    base = _base()
+    try:
+        target = resolve_inside(base, path)
+    except PathOutsideBaseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not target.exists() or not target.is_dir():
+        return {"highest_episode": 0}
+
+    return {"highest_episode": highest_episode(target)}

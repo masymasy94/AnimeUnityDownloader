@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { getHighestEpisode } from '../api/filesystem';
 import { validateCron } from '../api/scheduled';
 import { streamSearch } from '../api/search';
 import { getSites } from '../api/sites';
@@ -49,6 +50,7 @@ export function ScheduleForm({ initial, onSubmit, onCancel }: Props) {
 
   const [destFolder, setDestFolder] = useState(initial?.dest_folder ?? '');
   const [showBrowser, setShowBrowser] = useState(false);
+  const [lastEpisode, setLastEpisode] = useState<number | null>(null);
 
   // Pattern state
   const [patternKind, setPatternKind] = useState<'preset' | 'custom'>(
@@ -71,6 +73,23 @@ export function ScheduleForm({ initial, onSubmit, onCancel }: Props) {
 
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [submitting, setSubmitting] = useState(false);
+
+  // Scan folder for highest existing episode when destFolder changes
+  useEffect(() => {
+    if (!destFolder) {
+      setLastEpisode(null);
+      return;
+    }
+    let cancelled = false;
+    getHighestEpisode(destFolder)
+      .then((data) => {
+        if (!cancelled) setLastEpisode(data.highest_episode);
+      })
+      .catch(() => {
+        if (!cancelled) setLastEpisode(null);
+      });
+    return () => { cancelled = true; };
+  }, [destFolder]);
 
   // Load provider list
   useEffect(() => {
@@ -255,6 +274,14 @@ export function ScheduleForm({ initial, onSubmit, onCancel }: Props) {
                 Sfoglia...
               </button>
             </div>
+            {destFolder && lastEpisode !== null && (
+              <div className="mt-1 text-[11px] text-text-secondary">
+                {lastEpisode > 0
+                  ? <>Ultimo episodio trovato: <span className="text-accent font-medium">{lastEpisode}</span> — il prossimo download partira dall'episodio {lastEpisode + 1}</>
+                  : <>Nessun episodio trovato nella cartella — il download partira dall'episodio 1</>
+                }
+              </div>
+            )}
           </div>
 
           {/* Pattern selector */}
