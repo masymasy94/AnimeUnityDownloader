@@ -126,8 +126,8 @@ fun PlayerScreen(
                 Button(onClick = onBack) { Text("Indietro") }
             }
         } else {
-            // Use PlayerView with BUILT-IN controls (seekbar, play/pause, skip)
-            // Works with D-pad out of the box
+            // PlayerView with built-in controls — requestFocus at View level
+            // so D-pad events reach the controller (Issue #460 fix)
             AndroidView(
                 factory = { ctx ->
                     PlayerView(ctx).apply {
@@ -136,7 +136,16 @@ fun PlayerScreen(
                         setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
                         controllerShowTimeoutMs = 5000
                         controllerAutoShow = true
+                        // Critical for Android TV: View-level focus
+                        isFocusable = true
+                        isFocusableInTouchMode = true
+                        descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
                     }
+                },
+                update = { view ->
+                    view.player = player
+                    // Re-request focus after recomposition
+                    view.requestFocus()
                 },
                 modifier = Modifier.fillMaxSize(),
             )
