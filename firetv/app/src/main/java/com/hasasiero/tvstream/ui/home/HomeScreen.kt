@@ -1,6 +1,9 @@
 package com.hasasiero.tvstream.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.BasicTextField
@@ -10,7 +13,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -84,34 +91,70 @@ fun HomeScreen(
                             )
                             Spacer(Modifier.width(24.dp))
 
-                            BasicTextField(
-                                value = state.searchQuery,
-                                onValueChange = { viewModel.onSearchQueryChange(it) },
-                                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                    color = TextWhite,
-                                ),
-                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions = KeyboardActions.Default,
-                                decorationBox = { inner ->
-                                    Box(
-                                        modifier = Modifier
-                                            .width(300.dp)
-                                            .background(BgCard, MaterialTheme.shapes.small)
-                                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                                    ) {
-                                        if (state.searchQuery.isEmpty()) {
-                                            Text(
-                                                "Cerca anime...",
-                                                color = TextSecondary,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                            )
+                            // Search box — focus shows border, click opens keyboard
+                            var searchActive by remember { mutableStateOf(false) }
+                            var searchFocused by remember { mutableStateOf(false) }
+                            val searchFocusRequester = remember { FocusRequester() }
+                            val keyboardController = LocalSoftwareKeyboardController.current
+
+                            if (searchActive) {
+                                BasicTextField(
+                                    value = state.searchQuery,
+                                    onValueChange = { viewModel.onSearchQueryChange(it) },
+                                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                        color = TextWhite,
+                                    ),
+                                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                    keyboardActions = KeyboardActions(onSearch = {
+                                        keyboardController?.hide()
+                                    }),
+                                    modifier = Modifier
+                                        .width(300.dp)
+                                        .focusRequester(searchFocusRequester),
+                                    decorationBox = { inner ->
+                                        Box(
+                                            modifier = Modifier
+                                                .background(BgCard, MaterialTheme.shapes.small)
+                                                .border(1.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small)
+                                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                                        ) {
+                                            if (state.searchQuery.isEmpty()) {
+                                                Text(
+                                                    "Cerca anime...",
+                                                    color = TextSecondary,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                )
+                                            }
+                                            inner()
                                         }
-                                        inner()
-                                    }
-                                },
-                            )
+                                    },
+                                )
+                                LaunchedEffect(Unit) {
+                                    searchFocusRequester.requestFocus()
+                                }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .width(300.dp)
+                                        .background(BgCard, MaterialTheme.shapes.small)
+                                        .then(
+                                            if (searchFocused) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small)
+                                            else Modifier
+                                        )
+                                        .onFocusChanged { searchFocused = it.isFocused }
+                                        .focusable()
+                                        .clickable { searchActive = true }
+                                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                                ) {
+                                    Text(
+                                        if (state.searchQuery.isEmpty()) "Cerca anime..." else state.searchQuery,
+                                        color = if (state.searchQuery.isEmpty()) TextSecondary else TextWhite,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                }
+                            }
 
                             Spacer(Modifier.weight(1f))
 
