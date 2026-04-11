@@ -34,104 +34,122 @@ fun HomeScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        if (state.isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = MaterialTheme.colorScheme.primary,
-            )
-        } else if (state.error != null) {
-            Column(
-                modifier = Modifier.align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    text = state.error ?: "",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyLarge,
+        when {
+            state.isLoading -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = MaterialTheme.colorScheme.primary,
                 )
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = { viewModel.retry() }) {
-                    Text("Riprova")
+            }
+
+            state.error != null -> {
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = state.error ?: "",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = { viewModel.retry() }) {
+                        Text("Riprova")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = onSettingsClick) {
+                        Text("Impostazioni")
+                    }
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-            ) {
-                // Header: title + search + settings
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 48.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "AnimeHub",
-                            style = MaterialTheme.typography.headlineLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(Modifier.width(24.dp))
 
-                        BasicTextField(
-                            value = state.searchQuery,
-                            onValueChange = { viewModel.onSearchQueryChange(it) },
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                color = TextWhite,
-                            ),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions.Default,
-                            decorationBox = { inner ->
-                                Box(
-                                    modifier = Modifier
-                                        .width(300.dp)
-                                        .background(BgCard, MaterialTheme.shapes.small)
-                                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                                ) {
-                                    if (state.searchQuery.isEmpty()) {
-                                        Text(
-                                            "Cerca anime...",
-                                            color = TextSecondary,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                        )
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                ) {
+                    // Header
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 48.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "AnimeHub",
+                                style = MaterialTheme.typography.headlineLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(24.dp))
+
+                            BasicTextField(
+                                value = state.searchQuery,
+                                onValueChange = { viewModel.onSearchQueryChange(it) },
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                    color = TextWhite,
+                                ),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions.Default,
+                                decorationBox = { inner ->
+                                    Box(
+                                        modifier = Modifier
+                                            .width(300.dp)
+                                            .background(BgCard, MaterialTheme.shapes.small)
+                                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                                    ) {
+                                        if (state.searchQuery.isEmpty()) {
+                                            Text(
+                                                "Cerca anime...",
+                                                color = TextSecondary,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                            )
+                                        }
+                                        inner()
                                     }
-                                    inner()
-                                }
-                            },
-                        )
+                                },
+                            )
 
-                        Spacer(Modifier.weight(1f))
+                            Spacer(Modifier.weight(1f))
 
-                        Button(onClick = onSettingsClick) {
-                            Text("Impostazioni")
+                            Button(onClick = onSettingsClick) {
+                                Text("Impostazioni")
+                            }
                         }
                     }
-                }
 
-                // Search results
-                if (state.searchResults.isNotEmpty()) {
-                    item {
-                        ContentRow(
-                            title = "Risultati ricerca",
-                            items = state.searchResults,
-                            onItemClick = onAnimeClick,
-                        )
-                    }
-                }
-
-                // Latest anime
-                if (state.latest.isNotEmpty()) {
-                    val grouped = state.latest.groupBy { it.sourceSite }
-                    grouped.forEach { (site, animes) ->
+                    // Search results
+                    if (state.searchResults.isNotEmpty()) {
                         item {
                             ContentRow(
-                                title = "Ultimi usciti — $site",
-                                items = animes,
+                                title = "Risultati ricerca",
+                                items = state.searchResults,
                                 onItemClick = onAnimeClick,
+                            )
+                        }
+                    }
+
+                    // Latest anime - flat list, no grouping that could cause issues
+                    if (state.latest.isNotEmpty()) {
+                        item {
+                            ContentRow(
+                                title = "Ultimi usciti",
+                                items = state.latest,
+                                onItemClick = onAnimeClick,
+                            )
+                        }
+                    }
+
+                    // Empty state
+                    if (state.latest.isEmpty() && state.searchResults.isEmpty()) {
+                        item {
+                            Text(
+                                text = "Nessun anime trovato",
+                                modifier = Modifier.padding(horizontal = 48.dp),
+                                color = TextSecondary,
                             )
                         }
                     }

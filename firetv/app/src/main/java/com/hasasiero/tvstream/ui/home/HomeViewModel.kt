@@ -44,7 +44,7 @@ class HomeViewModel @Inject constructor(
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     isLoading = false,
-                    error = "Connessione al server fallita",
+                    error = "Errore: ${e.javaClass.simpleName}: ${e.message}",
                 )
             }
         }
