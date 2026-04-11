@@ -2,12 +2,16 @@ package com.hasasiero.tvstream.ui.player
 
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -43,6 +47,18 @@ fun PlayerScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val focusRequester = remember { FocusRequester() }
+
+    // Overlay visibility
+    var showOverlay by remember { mutableStateOf(true) }
+
+    // Auto-hide overlay after 3s
+    LaunchedEffect(showOverlay) {
+        if (showOverlay) {
+            delay(3000)
+            showOverlay = false
+        }
+    }
 
     // Set metadata for watch history
     LaunchedEffect(episodeId) {
@@ -65,47 +81,10 @@ fun PlayerScreen(
         }
     }
 
-    // ForwardingPlayer that intercepts next/prev to trigger navigation
-    val wrappedPlayer = remember(player, onNextEpisode, onPreviousEpisode) {
-        object : ForwardingPlayer(player) {
-            override fun getAvailableCommands(): Player.Commands {
-                val builder = super.getAvailableCommands().buildUpon()
-                if (onNextEpisode != null) builder.add(Player.COMMAND_SEEK_TO_NEXT)
-                if (onPreviousEpisode != null) builder.add(Player.COMMAND_SEEK_TO_PREVIOUS)
-                return builder.build()
-            }
-
-            override fun isCommandAvailable(command: Int): Boolean {
-                if (command == Player.COMMAND_SEEK_TO_NEXT && onNextEpisode != null) return true
-                if (command == Player.COMMAND_SEEK_TO_PREVIOUS && onPreviousEpisode != null) return true
-                return super.isCommandAvailable(command)
-            }
-
-            override fun seekToNext() {
-                onNextEpisode?.invoke()
-            }
-
-            override fun seekToNextMediaItem() {
-                onNextEpisode?.invoke()
-            }
-
-            override fun seekToPrevious() {
-                onPreviousEpisode?.invoke()
-            }
-
-            override fun seekToPreviousMediaItem() {
-                onPreviousEpisode?.invoke()
-            }
-
-            override fun hasNextMediaItem(): Boolean = onNextEpisode != null
-            override fun hasPreviousMediaItem(): Boolean = onPreviousEpisode != null
-        }
-    }
-
     // Save progress periodically
     LaunchedEffect(player) {
         while (true) {
-            delay(5_000) // Save every 5s
+            delay(5_000)
             if (player.duration > 0) {
                 viewModel.saveProgress(episodeId, player.currentPosition, player.duration)
             }
@@ -116,7 +95,6 @@ fun PlayerScreen(
     LaunchedEffect(state.videoUrl, state.videoType) {
         val url = state.videoUrl ?: return@LaunchedEffect
         val mediaItem = MediaItem.fromUri(url)
-
         if (state.videoType == "m3u8") {
             val dataSourceFactory = DefaultHttpDataSource.Factory()
             val hlsSource = HlsMediaSource.Factory(dataSourceFactory)
@@ -126,12 +104,8 @@ fun PlayerScreen(
             player.setMediaItem(mediaItem)
         }
         player.prepare()
-
-        // Resume from saved position
         val savedPosition = viewModel.getSavedPosition(episodeId)
-        if (savedPosition > 0) {
-            player.seekTo(savedPosition)
-        }
+        if (savedPosition > 0) player.seekTo(savedPosition)
     }
 
     DisposableEffect(Unit) {
@@ -148,72 +122,102 @@ fun PlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
-    ) {
-        if (state.isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = MaterialTheme.colorScheme.primary,
-            )
-        } else if (state.error != null) {
-            Column(
-                modifier = Modifier.align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(state.error ?: "", color = MaterialTheme.colorScheme.error)
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = onBack) { Text("Indietro") }
-            }
-        } else {
-            // PlayerView — intercept ALL key events at View level
-            var playerView by remember { mutableStateOf<PlayerView?>(null) }
-
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        this.player = wrappedPlayer
-                        useController = true
-                        setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
-                        controllerShowTimeoutMs = 5000
-                        controllerAutoShow = true
-                        setShowNextButton(onNextEpisode != null)
-                        setShowPreviousButton(onPreviousEpisode != null)
-                        isFocusable = true
-                        isFocusableInTouchMode = true
-                        descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
-                        // Intercept key events to show/hide controller
-                        setOnKeyListener { _, keyCode, event ->
-                            if (event.action == android.view.KeyEvent.ACTION_DOWN) {
-                                when (keyCode) {
-                                    android.view.KeyEvent.KEYCODE_BACK -> {
-                                        if (isControllerFullyVisible) {
-                                            hideController()
-                                        } else {
-                                            onBack()
-                                        }
-                                        true
-                                    }
-                                    else -> {
-                                        if (!isControllerFullyVisible) {
-                                            showController()
-                                            true
-                                        } else {
-                                            false // let PlayerView handle it
-                                        }
-                                    }
-                                }
-                            } else false
+            .background(Color.Black)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown) {
+                    if (event.key == Key.Back) {
+                        if (showOverlay) {
+                            showOverlay = false
+                        } else {
+                            onBack()
                         }
-                        requestFocus()
-                        playerView = this
+                        return@onPreviewKeyEvent true
                     }
-                },
-                update = { view ->
-                    view.player = wrappedPlayer
-                    if (!view.hasFocus()) view.requestFocus()
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
+                    if (!showOverlay) {
+                        // First key press just shows overlay, doesn't act
+                        showOverlay = true
+                        return@onPreviewKeyEvent true
+                    }
+                    // Overlay visible — handle transport
+                    when (event.key) {
+                        Key.DirectionCenter, Key.Enter -> {
+                            if (player.isPlaying) player.pause() else player.play()
+                            showOverlay = true // reset timer
+                            true
+                        }
+                        Key.DirectionLeft -> {
+                            player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0))
+                            showOverlay = true
+                            true
+                        }
+                        Key.DirectionRight -> {
+                            player.seekTo(
+                                (player.currentPosition + 10_000)
+                                    .coerceAtMost(player.duration.coerceAtLeast(0))
+                            )
+                            showOverlay = true
+                            true
+                        }
+                        else -> {
+                            showOverlay = true
+                            false
+                        }
+                    }
+                } else false
+            },
+    ) {
+        when {
+            state.isLoading -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            state.error != null -> {
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(state.error ?: "", color = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = onBack) { Text("Indietro") }
+                }
+            }
+            else -> {
+                // Video surface only — no built-in controls
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            this.player = player
+                            useController = false
+                            setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+                        }
+                    },
+                    update = { view -> view.player = player },
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                // Custom Plex-style overlay
+                PlayerOverlay(
+                    visible = showOverlay,
+                    title = title,
+                    player = player,
+                    hasNext = onNextEpisode != null,
+                    hasPrev = onPreviousEpisode != null,
+                    onBack = {
+                        if (showOverlay) showOverlay = false else onBack()
+                    },
+                    onNext = { onNextEpisode?.invoke() },
+                    onPrev = { onPreviousEpisode?.invoke() },
+                    onAnyInteraction = { showOverlay = true },
+                )
+            }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
     }
 }
