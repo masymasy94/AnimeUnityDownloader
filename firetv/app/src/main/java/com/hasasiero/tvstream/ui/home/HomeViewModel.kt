@@ -2,6 +2,8 @@ package com.hasasiero.tvstream.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hasasiero.tvstream.data.local.WatchHistoryDao
+import com.hasasiero.tvstream.data.local.WatchHistoryEntry
 import com.hasasiero.tvstream.data.repository.ContentRepository
 import com.hasasiero.tvstream.domain.model.AnimeSearchResult
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -15,6 +17,7 @@ import javax.inject.Inject
 data class HomeUiState(
     val latest: List<AnimeSearchResult> = emptyList(),
     val searchResults: List<AnimeSearchResult> = emptyList(),
+    val watchHistory: List<WatchHistoryEntry> = emptyList(),
     val searchQuery: String = "",
     val isSearching: Boolean = false,
     val isLoading: Boolean = true,
@@ -24,6 +27,7 @@ data class HomeUiState(
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val repository: ContentRepository,
+    private val watchHistoryDao: WatchHistoryDao,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(HomeUiState())
@@ -33,6 +37,16 @@ class HomeViewModel @Inject constructor(
 
     init {
         loadLatest()
+        loadWatchHistory()
+    }
+
+    private fun loadWatchHistory() {
+        viewModelScope.launch {
+            try {
+                val history = watchHistoryDao.getRecent()
+                _state.value = _state.value.copy(watchHistory = history)
+            } catch (_: Exception) {}
+        }
     }
 
     private fun loadLatest() {
@@ -69,5 +83,8 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun retry() = loadLatest()
+    fun retry() {
+        loadLatest()
+        loadWatchHistory()
+    }
 }

@@ -18,7 +18,16 @@ object Home
 data class Detail(val animeId: Int, val slug: String, val site: String)
 
 @Serializable
-data class Player(val episodeId: Int, val site: String, val title: String)
+data class Player(
+    val episodeId: Int,
+    val site: String,
+    val title: String,
+    val animeId: Int,
+    val animeSlug: String,
+    val animeTitle: String,
+    val coverUrl: String = "",
+    val episodeNumber: String = "",
+)
 
 @Serializable
 object Settings
@@ -33,6 +42,20 @@ fun AppNavGraph() {
                 onAnimeClick = { anime ->
                     navController.navigate(Detail(anime.id, anime.slug, anime.sourceSite))
                 },
+                onContinueWatching = { entry ->
+                    navController.navigate(
+                        Player(
+                            episodeId = entry.episodeId,
+                            site = entry.sourceSite,
+                            title = "${entry.animeTitle} - EP ${entry.episodeNumber}",
+                            animeId = entry.animeId,
+                            animeSlug = entry.animeSlug,
+                            animeTitle = entry.animeTitle,
+                            coverUrl = entry.coverUrl ?: "",
+                            episodeNumber = entry.episodeNumber,
+                        )
+                    )
+                },
                 onSettingsClick = { navController.navigate(Settings) },
             )
         }
@@ -43,8 +66,19 @@ fun AppNavGraph() {
                 animeId = route.animeId,
                 slug = route.slug,
                 site = route.site,
-                onPlayEpisode = { episodeId, epTitle ->
-                    navController.navigate(Player(episodeId, route.site, epTitle))
+                onPlayEpisode = { episodeId, epNumber, epTitle, coverUrl ->
+                    navController.navigate(
+                        Player(
+                            episodeId = episodeId,
+                            site = route.site,
+                            title = epTitle,
+                            animeId = route.animeId,
+                            animeSlug = route.slug,
+                            animeTitle = epTitle.substringBefore(" - EP"),
+                            coverUrl = coverUrl ?: "",
+                            episodeNumber = epNumber,
+                        )
+                    )
                 },
                 onBack = { navController.popBackStack() },
             )
@@ -56,6 +90,11 @@ fun AppNavGraph() {
                 episodeId = route.episodeId,
                 site = route.site,
                 title = route.title,
+                animeId = route.animeId,
+                animeSlug = route.animeSlug,
+                animeTitle = route.animeTitle,
+                coverUrl = route.coverUrl,
+                episodeNumber = route.episodeNumber,
                 onBack = { navController.popBackStack() },
             )
         }

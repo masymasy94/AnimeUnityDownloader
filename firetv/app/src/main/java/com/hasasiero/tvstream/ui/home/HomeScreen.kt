@@ -22,8 +22,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.hasasiero.tvstream.data.local.WatchHistoryEntry
 import com.hasasiero.tvstream.domain.model.AnimeSearchResult
 import com.hasasiero.tvstream.ui.components.ContentRow
+import com.hasasiero.tvstream.ui.components.ContinueWatchingRow
 import com.hasasiero.tvstream.ui.theme.BgCard
 import com.hasasiero.tvstream.ui.theme.TextSecondary
 import com.hasasiero.tvstream.ui.theme.TextWhite
@@ -31,6 +33,7 @@ import com.hasasiero.tvstream.ui.theme.TextWhite
 @Composable
 fun HomeScreen(
     onAnimeClick: (AnimeSearchResult) -> Unit,
+    onContinueWatching: (WatchHistoryEntry) -> Unit = {},
     onSettingsClick: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
@@ -161,6 +164,16 @@ fun HomeScreen(
                             Button(onClick = onSettingsClick) {
                                 Text("Impostazioni")
                             }
+                        }
+                    }
+
+                    // Continue watching
+                    if (state.watchHistory.isNotEmpty()) {
+                        item {
+                            ContinueWatchingRow(
+                                items = state.watchHistory,
+                                onItemClick = onContinueWatching,
+                            )
                         }
                     }
 

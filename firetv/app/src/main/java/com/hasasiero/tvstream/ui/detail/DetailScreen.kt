@@ -24,7 +24,7 @@ fun DetailScreen(
     animeId: Int,
     slug: String,
     site: String,
-    onPlayEpisode: (episodeId: Int, title: String) -> Unit,
+    onPlayEpisode: (episodeId: Int, epNumber: String, title: String, coverUrl: String?) -> Unit,
     onBack: () -> Unit,
     viewModel: DetailViewModel = hiltViewModel(),
 ) {
@@ -135,7 +135,7 @@ fun DetailScreen(
                                 animeTitle = anime.title,
                                 onClick = {
                                     val epTitle = "${anime.title} - EP ${episode.number}"
-                                    onPlayEpisode(episode.id, epTitle)
+                                    onPlayEpisode(episode.id, episode.number, epTitle, anime.coverUrl)
                                 },
                             )
                         }
