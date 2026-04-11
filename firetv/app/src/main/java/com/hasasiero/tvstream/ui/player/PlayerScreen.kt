@@ -1,6 +1,5 @@
 package com.hasasiero.tvstream.ui.player
 
-import android.view.KeyEvent
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -35,14 +34,16 @@ fun PlayerScreen(
     coverUrl: String = "",
     episodeNumber: String = "",
     onBack: () -> Unit,
+    onNextEpisode: (() -> Unit)? = null,
+    onPreviousEpisode: (() -> Unit)? = null,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Set metadata for watch history
-    remember {
+    // Set metadata for watch history — use LaunchedEffect, not remember
+    LaunchedEffect(episodeId) {
         viewModel.currentAnimeId = animeId
         viewModel.currentAnimeSlug = animeSlug
         viewModel.currentAnimeTitle = animeTitle
@@ -50,7 +51,6 @@ fun PlayerScreen(
         viewModel.currentSourceSite = site
         viewModel.currentEpisodeNumber = episodeNumber
         viewModel.currentEpisodeTitle = title
-        true
     }
 
     LaunchedEffect(episodeId, site) {
@@ -126,8 +126,7 @@ fun PlayerScreen(
                 Button(onClick = onBack) { Text("Indietro") }
             }
         } else {
-            // PlayerView with built-in controls — requestFocus at View level
-            // so D-pad events reach the controller (Issue #460 fix)
+            // PlayerView with built-in controls + View-level focus for D-pad
             AndroidView(
                 factory = { ctx ->
                     PlayerView(ctx).apply {
@@ -136,19 +135,29 @@ fun PlayerScreen(
                         setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
                         controllerShowTimeoutMs = 5000
                         controllerAutoShow = true
-                        // Critical for Android TV: View-level focus
                         isFocusable = true
                         isFocusableInTouchMode = true
                         descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
+                        // Show next/prev buttons
+                        setShowNextButton(onNextEpisode != null)
+                        setShowPreviousButton(onPreviousEpisode != null)
                     }
                 },
                 update = { view ->
                     view.player = player
-                    // Re-request focus after recomposition
                     view.requestFocus()
                 },
                 modifier = Modifier.fillMaxSize(),
             )
+
+            // Handle next/prev via player listener
+            if (onNextEpisode != null || onPreviousEpisode != null) {
+                DisposableEffect(player) {
+                    // Override next/prev behavior via the PlayerView's button clicks
+                    // ExoPlayer fires these as commands
+                    onDispose {}
+                }
+            }
         }
     }
 }

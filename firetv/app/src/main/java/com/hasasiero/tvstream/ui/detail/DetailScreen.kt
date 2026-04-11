@@ -24,7 +24,7 @@ fun DetailScreen(
     animeId: Int,
     slug: String,
     site: String,
-    onPlayEpisode: (episodeId: Int, epNumber: String, title: String, coverUrl: String?) -> Unit,
+    onPlayEpisode: (episodeId: Int, epNumber: String, title: String, coverUrl: String?, nextId: Int, nextNum: String, prevId: Int, prevNum: String) -> Unit,
     onBack: () -> Unit,
     viewModel: DetailViewModel = hiltViewModel(),
 ) {
@@ -130,12 +130,20 @@ fun DetailScreen(
                         modifier = Modifier.weight(1f),
                     ) {
                         items(state.episodes, key = { it.id }) { episode ->
+                            val episodes = state.episodes
+                            val idx = episodes.indexOf(episode)
+                            val nextEp = episodes.getOrNull(idx + 1)
+                            val prevEp = episodes.getOrNull(idx - 1)
                             EpisodeCard(
                                 episode = episode,
                                 animeTitle = anime.title,
                                 onClick = {
                                     val epTitle = "${anime.title} - EP ${episode.number}"
-                                    onPlayEpisode(episode.id, episode.number, epTitle, anime.coverUrl)
+                                    onPlayEpisode(
+                                        episode.id, episode.number, epTitle, anime.coverUrl,
+                                        nextEp?.id ?: -1, nextEp?.number ?: "",
+                                        prevEp?.id ?: -1, prevEp?.number ?: "",
+                                    )
                                 },
                             )
                         }
