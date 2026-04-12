@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getSettings, updateSettings } from '../api/settings';
+import { getSettings, updateSettings, testTelegram } from '../api/settings';
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
@@ -10,17 +10,17 @@ export function SettingsPage() {
   });
 
   const [maxConcurrent, setMaxConcurrent] = useState(2);
-  const [plexUrl, setPlexUrl] = useState('');
-  const [plexToken, setPlexToken] = useState('');
-  const [plexLibraryId, setPlexLibraryId] = useState('');
+  const [telegramBotToken, setTelegramBotToken] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
   const [saved, setSaved] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; error?: string } | null>(null);
+  const [testLoading, setTestLoading] = useState(false);
 
   useEffect(() => {
     if (settings) {
       setMaxConcurrent(settings.max_concurrent_downloads);
-      setPlexUrl(settings.plex_url || '');
-      setPlexToken(settings.plex_token || '');
-      setPlexLibraryId(settings.plex_library_id || '');
+      setTelegramBotToken(settings.telegram_bot_token || '');
+      setTelegramChatId(settings.telegram_chat_id || '');
     }
   }, [settings]);
 
@@ -36,10 +36,22 @@ export function SettingsPage() {
   const handleSave = () => {
     mutation.mutate({
       max_concurrent_downloads: maxConcurrent,
-      plex_url: plexUrl,
-      plex_token: plexToken,
-      plex_library_id: plexLibraryId,
+      telegram_bot_token: telegramBotToken,
+      telegram_chat_id: telegramChatId,
     });
+  };
+
+  const handleTestTelegram = async () => {
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      const result = await testTelegram();
+      setTestResult(result);
+    } catch {
+      setTestResult({ success: false, error: 'Errore di rete' });
+    }
+    setTestLoading(false);
+    setTimeout(() => setTestResult(null), 4000);
   };
 
   if (isLoading) {
@@ -92,56 +104,58 @@ export function SettingsPage() {
         </div>
       </div>
 
-      {/* Plex Integration */}
+      {/* Telegram Notifications */}
       <div className="bg-bg-secondary border border-border rounded-[5px] p-6 space-y-5">
-        <h2 className="text-lg font-semibold text-text-white">Integrazione Plex</h2>
+        <h2 className="text-lg font-semibold text-text-white">Notifiche Telegram</h2>
         <p className="text-xs text-text-secondary">
-          Configura Plex per avviare automaticamente una scansione della libreria al termine dei download.
+          Ricevi un riepilogo su Telegram al termine di ogni ciclo di download programmati.
         </p>
 
         <div className="space-y-2">
           <label className="block text-sm font-medium text-text-white">
-            URL Plex
-          </label>
-          <input
-            type="text"
-            value={plexUrl}
-            onChange={(e) => setPlexUrl(e.target.value)}
-            placeholder="http://192.168.1.100:32400"
-            className="w-full px-4 py-2.5 bg-bg-primary border border-border rounded-[5px] text-text-white text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-text-secondary/50"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <label className="block text-sm font-medium text-text-white">
-            Token Plex
+            Bot Token
           </label>
           <input
             type="password"
-            value={plexToken}
-            onChange={(e) => setPlexToken(e.target.value)}
-            placeholder="Il tuo X-Plex-Token"
+            value={telegramBotToken}
+            onChange={(e) => setTelegramBotToken(e.target.value)}
+            placeholder="123456:ABC-DEF1234..."
             className="w-full px-4 py-2.5 bg-bg-primary border border-border rounded-[5px] text-text-white text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-text-secondary/50"
           />
           <p className="text-[11px] text-text-secondary">
-            Puoi trovarlo nelle impostazioni Plex o negli URL delle richieste del client Plex.
+            Crea un bot con <span className="text-accent">@BotFather</span> su Telegram e copia il token.
           </p>
         </div>
 
         <div className="space-y-2">
           <label className="block text-sm font-medium text-text-white">
-            ID Libreria (opzionale)
+            Chat ID
           </label>
           <input
             type="text"
-            value={plexLibraryId}
-            onChange={(e) => setPlexLibraryId(e.target.value)}
-            placeholder="es. 1"
-            className="w-32 px-4 py-2.5 bg-bg-primary border border-border rounded-[5px] text-text-white text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-text-secondary/50"
+            value={telegramChatId}
+            onChange={(e) => setTelegramChatId(e.target.value)}
+            placeholder="es. 123456789"
+            className="w-full px-4 py-2.5 bg-bg-primary border border-border rounded-[5px] text-text-white text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-text-secondary/50"
           />
           <p className="text-[11px] text-text-secondary">
-            Se vuoto, viene scansionata tutta la libreria. Specifica l'ID della sezione anime per una scansione mirata.
+            Invia un messaggio al bot, poi apri <span className="text-accent">https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</span> per trovare il tuo chat ID.
           </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleTestTelegram}
+            disabled={testLoading || !telegramBotToken || !telegramChatId}
+            className="px-4 py-2 bg-bg-primary border border-border text-text-white text-sm rounded-[5px] hover:border-accent disabled:opacity-50 transition-colors"
+          >
+            {testLoading ? 'Invio...' : 'Invia test'}
+          </button>
+          {testResult && (
+            <span className={`text-sm font-medium ${testResult.success ? 'text-success' : 'text-error'}`}>
+              {testResult.success ? 'Messaggio inviato!' : testResult.error}
+            </span>
+          )}
         </div>
       </div>
 
