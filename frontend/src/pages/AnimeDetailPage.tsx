@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { getAnimeDetail, getEpisodes } from '../api/anime';
@@ -15,6 +15,7 @@ export function AnimeDetailPage() {
   const queryClient = useQueryClient();
   const [episodeEnd, setEpisodeEnd] = useState(120);
   const [streamInfo, setStreamInfo] = useState<{ url: string; type: 'mp4' | 'm3u8'; title: string } | null>(null);
+  const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
 
   // Parse anime path
   const match = animePath?.match(/^(\d+)-(.+)$/);
@@ -175,6 +176,7 @@ export function AnimeDetailPage() {
     async (episode: Episode) => {
       if (!anime) return;
       try {
+        setCurrentEpisode(episode);
         const resp = await fetch(`/api/stream/source/${episode.id}?site=${encodeURIComponent(site)}`);
         if (!resp.ok) throw new Error('Impossibile ottenere lo stream');
         const data = await resp.json();
@@ -184,11 +186,22 @@ export function AnimeDetailPage() {
           title: `${anime.title} — Ep. ${episode.number}`,
         });
       } catch (err) {
+        setCurrentEpisode(null);
         alert(`Errore streaming: ${(err as Error).message}`);
       }
     },
     [anime, site],
   );
+
+  const nextEpisode = useMemo(() => {
+    if (!currentEpisode || !episodesData?.episodes) return null;
+    const currentNum = parseFloat(currentEpisode.number);
+    return episodesData.episodes.find((ep) => parseFloat(ep.number) > currentNum) || null;
+  }, [currentEpisode, episodesData?.episodes]);
+
+  const handleNext = useCallback(() => {
+    if (nextEpisode) handleWatch(nextEpisode);
+  }, [nextEpisode, handleWatch]);
 
   const handleLoadMore = useCallback(() => {
     setEpisodeEnd((prev) => prev + 120);
@@ -323,7 +336,13 @@ export function AnimeDetailPage() {
           url={streamInfo.url}
           type={streamInfo.type}
           title={streamInfo.title}
-          onClose={() => setStreamInfo(null)}
+          onClose={() => { setStreamInfo(null); setCurrentEpisode(null); }}
+          onNext={nextEpisode ? handleNext : undefined}
+          nextEpisodeLabel={
+            nextEpisode
+              ? `Ep. ${nextEpisode.number}${nextEpisode.title ? ` — ${nextEpisode.title}` : ''}`
+              : undefined
+          }
         />
       )}
     </div>
