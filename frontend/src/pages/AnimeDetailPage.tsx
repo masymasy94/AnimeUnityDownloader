@@ -3,11 +3,13 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { getAnimeDetail, getEpisodes } from '../api/anime';
 import { startDownloads } from '../api/downloads';
+import { createSchedule } from '../api/scheduled';
 import { checkTrackedStatus, trackAnime, untrackAnime } from '../api/tracked';
 import { EpisodeList } from '../components/EpisodeList';
 import { FolderBrowser } from '../components/FolderBrowser';
+import { ScheduleForm } from '../components/ScheduleForm';
 import { VideoPlayer } from '../components/VideoPlayer';
-import type { Episode } from '../types/anime';
+import type { AnimeSearchResult, Episode } from '../types/anime';
 
 export function AnimeDetailPage() {
   const { animePath } = useParams<{ animePath: string }>();
@@ -19,6 +21,7 @@ export function AnimeDetailPage() {
   const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
   const [destFolder, setDestFolder] = useState('');
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
+  const [showScheduleForm, setShowScheduleForm] = useState(false);
 
   // Parse anime path
   const match = animePath?.match(/^(\d+)-(.+)$/);
@@ -357,6 +360,7 @@ export function AnimeDetailPage() {
           onDownloadAll={handleDownloadAll}
           onDownloadRange={handleDownloadRange}
           onDownloadSelected={handleDownloadSelected}
+          onSchedule={() => setShowScheduleForm(true)}
           isLoadingMore={episodesFetching}
         />
       ) : null}
@@ -386,6 +390,34 @@ export function AnimeDetailPage() {
             setShowFolderBrowser(false);
           }}
           onClose={() => setShowFolderBrowser(false)}
+        />
+      )}
+
+      {/* Schedule download form (anime + site preselected) */}
+      {showScheduleForm && (
+        <ScheduleForm
+          presetAnime={{
+            anime: {
+              id: anime.id,
+              slug: anime.slug,
+              title: anime.title,
+              title_eng: anime.title_eng,
+              cover_url: anime.cover_url,
+              type: anime.type,
+              year: anime.year,
+              episodes_count: anime.episodes_count,
+              genres: anime.genres,
+              dub: anime.dub,
+              source_site: site,
+            } satisfies AnimeSearchResult,
+            site,
+          }}
+          onSubmit={async (req) => {
+            await createSchedule(req);
+            queryClient.invalidateQueries({ queryKey: ['scheduled'] });
+            setShowScheduleForm(false);
+          }}
+          onCancel={() => setShowScheduleForm(false)}
         />
       )}
     </div>

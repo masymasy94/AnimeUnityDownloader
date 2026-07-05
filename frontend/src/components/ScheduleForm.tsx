@@ -13,31 +13,41 @@ import { FolderBrowser } from './FolderBrowser';
 
 interface Props {
   initial?: ScheduledDownload | null;
+  /** Preselect (and lock) the anime + site, e.g. when opened from the anime page. */
+  presetAnime?: { anime: AnimeSearchResult; site: string } | null;
   onSubmit: (req: ScheduleCreateRequest) => Promise<void>;
   onCancel: () => void;
 }
 
-export function ScheduleForm({ initial, onSubmit, onCancel }: Props) {
+export function ScheduleForm({ initial, presetAnime, onSubmit, onCancel }: Props) {
+  // When an anime is preset (or we're editing) the anime/site are fixed.
+  const animeLocked = !!presetAnime;
+
   const [sites, setSites] = useState<{ id: string; name: string }[]>([]);
-  const [siteId, setSiteId] = useState(initial?.source_site ?? '');
-  const [animeQuery, setAnimeQuery] = useState(initial?.anime_title ?? '');
+  const [siteId, setSiteId] = useState(
+    initial?.source_site ?? presetAnime?.site ?? '',
+  );
+  const [animeQuery, setAnimeQuery] = useState(
+    initial?.anime_title ?? presetAnime?.anime.title ?? '',
+  );
   const [searchResults, setSearchResults] = useState<AnimeSearchResult[]>([]);
   const [selectedAnime, setSelectedAnime] = useState<AnimeSearchResult | null>(
-    initial
-      ? ({
-          id: initial.anime_id,
-          slug: initial.anime_slug,
-          title: initial.anime_title,
-          title_eng: null,
-          cover_url: initial.cover_url,
-          type: null,
-          year: null,
-          episodes_count: null,
-          genres: [],
-          dub: false,
-          source_site: initial.source_site,
-        } satisfies AnimeSearchResult)
-      : null,
+    presetAnime?.anime ??
+      (initial
+        ? ({
+            id: initial.anime_id,
+            slug: initial.anime_slug,
+            title: initial.anime_title,
+            title_eng: null,
+            cover_url: initial.cover_url,
+            type: null,
+            year: null,
+            episodes_count: null,
+            genres: [],
+            dub: false,
+            source_site: initial.source_site,
+          } satisfies AnimeSearchResult)
+        : null),
   );
   const abortSearchRef = useRef<(() => void) | null>(null);
 
@@ -184,7 +194,8 @@ export function ScheduleForm({ initial, onSubmit, onCancel }: Props) {
             <select
               value={siteId}
               onChange={(e) => setSiteId(e.target.value)}
-              className="w-full px-2 py-1.5 text-xs bg-bg-card border border-border rounded text-text-white"
+              disabled={animeLocked}
+              className="w-full px-2 py-1.5 text-xs bg-bg-card border border-border rounded text-text-white disabled:opacity-60"
             >
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -194,19 +205,25 @@ export function ScheduleForm({ initial, onSubmit, onCancel }: Props) {
             </select>
           </div>
 
-          {/* Anime search */}
+          {/* Anime search (locked when preset) */}
           <div>
             <label className="block text-[11px] text-text-secondary mb-1">Anime</label>
-            <input
-              value={animeQuery}
-              onChange={(e) => {
-                setAnimeQuery(e.target.value);
-                setSelectedAnime(null);
-              }}
-              placeholder="Cerca titolo..."
-              className="w-full px-2 py-1.5 text-xs bg-bg-card border border-border rounded text-text-white"
-            />
-            {!selectedAnime && searchResults.length > 0 && (
+            {animeLocked ? (
+              <div className="px-2 py-1.5 text-xs bg-bg-card border border-border rounded text-text-white">
+                {selectedAnime?.title}
+              </div>
+            ) : (
+              <input
+                value={animeQuery}
+                onChange={(e) => {
+                  setAnimeQuery(e.target.value);
+                  setSelectedAnime(null);
+                }}
+                placeholder="Cerca titolo..."
+                className="w-full px-2 py-1.5 text-xs bg-bg-card border border-border rounded text-text-white"
+              />
+            )}
+            {!animeLocked && !selectedAnime && searchResults.length > 0 && (
               <div className="mt-1 border border-border rounded bg-bg-card max-h-40 overflow-y-auto">
                 {searchResults.map((r) => (
                   <button
@@ -223,7 +240,7 @@ export function ScheduleForm({ initial, onSubmit, onCancel }: Props) {
                 ))}
               </div>
             )}
-            {selectedAnime && (
+            {!animeLocked && selectedAnime && (
               <div className="mt-1 text-[11px] text-accent">
                 Selezionato: {selectedAnime.title}
               </div>
