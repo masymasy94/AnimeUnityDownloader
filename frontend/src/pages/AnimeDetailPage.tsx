@@ -19,9 +19,15 @@ export function AnimeDetailPage() {
   const [episodeEnd, setEpisodeEnd] = useState(120);
   const [streamInfo, setStreamInfo] = useState<{ url: string; type: 'mp4' | 'm3u8'; title: string } | null>(null);
   const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
-  const [destFolder, setDestFolder] = useState('');
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
+  const [pendingDownload, setPendingDownload] = useState<((folder: string) => void) | null>(null);
   const [showScheduleForm, setShowScheduleForm] = useState(false);
+
+  // Ask for the destination folder, then run the given download action with it
+  const withFolder = useCallback((action: (folder: string) => void) => {
+    setPendingDownload(() => action);
+    setShowFolderBrowser(true);
+  }, []);
 
   // Parse anime path
   const match = animePath?.match(/^(\d+)-(.+)$/);
@@ -82,8 +88,35 @@ export function AnimeDetailPage() {
   });
 
   const handleDownload = useCallback(
-    async (episode: Episode) => {
+    (episode: Episode) => {
       if (!anime) return;
+      withFolder(async (folder) => {
+        await startDownloads({
+          anime_id: anime.id,
+          anime_title: anime.title,
+          anime_slug: anime.slug,
+          cover_url: anime.cover_url,
+          genres: anime.genres,
+          plot: anime.plot,
+          year: anime.year,
+          source_site: site,
+          dest_folder_override: folder || undefined,
+          episodes: [{ episode_id: episode.id, episode_number: episode.number, episode_title: episode.title }],
+        });
+        queryClient.invalidateQueries({ queryKey: ['episodes'] });
+      });
+    },
+    [anime, site, queryClient, withFolder],
+  );
+
+  const handleDownloadAll = useCallback(() => {
+    if (!anime || !episodesData) return;
+    const downloadable = episodesData.episodes.filter(
+      (ep) => !ep.download_status || ep.download_status === 'failed',
+    );
+    if (downloadable.length === 0) return;
+
+    withFolder(async (folder) => {
       await startDownloads({
         anime_id: anime.id,
         anime_title: anime.title,
@@ -93,39 +126,16 @@ export function AnimeDetailPage() {
         plot: anime.plot,
         year: anime.year,
         source_site: site,
-        dest_folder_override: destFolder || undefined,
-        episodes: [{ episode_id: episode.id, episode_number: episode.number, episode_title: episode.title }],
+        dest_folder_override: folder || undefined,
+        episodes: downloadable.map((ep) => ({
+          episode_id: ep.id,
+          episode_number: ep.number,
+          episode_title: ep.title,
+        })),
       });
       queryClient.invalidateQueries({ queryKey: ['episodes'] });
-    },
-    [anime, site, destFolder, queryClient],
-  );
-
-  const handleDownloadAll = useCallback(async () => {
-    if (!anime || !episodesData) return;
-    const downloadable = episodesData.episodes.filter(
-      (ep) => !ep.download_status || ep.download_status === 'failed',
-    );
-    if (downloadable.length === 0) return;
-
-    await startDownloads({
-      anime_id: anime.id,
-      anime_title: anime.title,
-      anime_slug: anime.slug,
-      cover_url: anime.cover_url,
-      genres: anime.genres,
-      plot: anime.plot,
-      year: anime.year,
-      source_site: site,
-      dest_folder_override: destFolder || undefined,
-      episodes: downloadable.map((ep) => ({
-        episode_id: ep.id,
-        episode_number: ep.number,
-        episode_title: ep.title,
-      })),
     });
-    queryClient.invalidateQueries({ queryKey: ['episodes'] });
-  }, [anime, episodesData, site, destFolder, queryClient]);
+  }, [anime, episodesData, site, queryClient, withFolder]);
 
   const handleDownloadRange = useCallback(
     async (from: number, to: number) => {
@@ -137,49 +147,53 @@ export function AnimeDetailPage() {
       );
       if (downloadable.length === 0) return;
 
-      await startDownloads({
-        anime_id: anime.id,
-        anime_title: anime.title,
-        anime_slug: anime.slug,
-        cover_url: anime.cover_url,
-        genres: anime.genres,
-        plot: anime.plot,
-        year: anime.year,
-        source_site: site,
-        dest_folder_override: destFolder || undefined,
-        episodes: downloadable.map((ep) => ({
-          episode_id: ep.id,
-          episode_number: ep.number,
-          episode_title: ep.title,
-        })),
+      withFolder(async (folder) => {
+        await startDownloads({
+          anime_id: anime.id,
+          anime_title: anime.title,
+          anime_slug: anime.slug,
+          cover_url: anime.cover_url,
+          genres: anime.genres,
+          plot: anime.plot,
+          year: anime.year,
+          source_site: site,
+          dest_folder_override: folder || undefined,
+          episodes: downloadable.map((ep) => ({
+            episode_id: ep.id,
+            episode_number: ep.number,
+            episode_title: ep.title,
+          })),
+        });
+        queryClient.invalidateQueries({ queryKey: ['episodes'] });
       });
-      queryClient.invalidateQueries({ queryKey: ['episodes'] });
     },
-    [anime, animeId, slug, site, destFolder, queryClient],
+    [anime, animeId, slug, site, queryClient, withFolder],
   );
 
   const handleDownloadSelected = useCallback(
-    async (selected: Episode[]) => {
+    (selected: Episode[]) => {
       if (!anime || selected.length === 0) return;
-      await startDownloads({
-        anime_id: anime.id,
-        anime_title: anime.title,
-        anime_slug: anime.slug,
-        cover_url: anime.cover_url,
-        genres: anime.genres,
-        plot: anime.plot,
-        year: anime.year,
-        source_site: site,
-        dest_folder_override: destFolder || undefined,
-        episodes: selected.map((ep) => ({
-          episode_id: ep.id,
-          episode_number: ep.number,
-          episode_title: ep.title,
-        })),
+      withFolder(async (folder) => {
+        await startDownloads({
+          anime_id: anime.id,
+          anime_title: anime.title,
+          anime_slug: anime.slug,
+          cover_url: anime.cover_url,
+          genres: anime.genres,
+          plot: anime.plot,
+          year: anime.year,
+          source_site: site,
+          dest_folder_override: folder || undefined,
+          episodes: selected.map((ep) => ({
+            episode_id: ep.id,
+            episode_number: ep.number,
+            episode_title: ep.title,
+          })),
+        });
+        queryClient.invalidateQueries({ queryKey: ['episodes'] });
       });
-      queryClient.invalidateQueries({ queryKey: ['episodes'] });
     },
-    [anime, site, destFolder, queryClient],
+    [anime, site, queryClient, withFolder],
   );
 
   const handleWatch = useCallback(
@@ -320,30 +334,6 @@ export function AnimeDetailPage() {
         </div>
       </div>
 
-      {/* Destination folder selector */}
-      <div className="flex items-center gap-3 flex-wrap rounded-[5px] bg-bg-secondary border border-border p-3">
-        <span className="text-sm text-text-secondary">Cartella di destinazione:</span>
-        <span className="text-sm text-text-white font-medium truncate max-w-[50%]">
-          {destFolder ? `/downloads/${destFolder}` : 'Predefinita (per titolo)'}
-        </span>
-        <div className="ml-auto flex gap-2">
-          <button
-            onClick={() => setShowFolderBrowser(true)}
-            className="px-3 py-1.5 text-xs font-medium rounded-[5px] bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 transition-colors"
-          >
-            Sfoglia...
-          </button>
-          {destFolder && (
-            <button
-              onClick={() => setDestFolder('')}
-              className="px-3 py-1.5 text-xs font-medium rounded-[5px] border border-border text-text-secondary hover:text-text-white hover:bg-bg-hover transition-colors"
-            >
-              Predefinita
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* Episodes */}
       {episodesLoading ? (
         <div className="flex items-center justify-center py-10">
@@ -381,15 +371,19 @@ export function AnimeDetailPage() {
         />
       )}
 
-      {/* Destination folder browser */}
+      {/* Destination folder browser — shown when a download is triggered */}
       {showFolderBrowser && (
         <FolderBrowser
-          initialPath={destFolder}
+          initialPath=""
           onSelect={(path) => {
-            setDestFolder(path);
             setShowFolderBrowser(false);
+            pendingDownload?.(path);
+            setPendingDownload(null);
           }}
-          onClose={() => setShowFolderBrowser(false)}
+          onClose={() => {
+            setShowFolderBrowser(false);
+            setPendingDownload(null);
+          }}
         />
       )}
 
