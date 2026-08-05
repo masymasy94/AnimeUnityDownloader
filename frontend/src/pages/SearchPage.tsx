@@ -10,6 +10,17 @@ const DUB_FILTERS = ['Tutti', 'SUB', 'ITA'] as const;
 
 const TYPE_ORDER: Record<string, number> = { TV: 0, Movie: 1, ONA: 2, OVA: 3, Special: 4 };
 
+// "Tutti" selezionato = nessun filtro applicato: resta marcato ma non in accento,
+// cosi' i tre gruppi non sembrano tre filtri attivi contemporaneamente.
+const pillClass = (active: boolean, isDefault = false) =>
+  `spec-line px-3 py-1.5 text-[11px] font-bold rounded-sm transition-colors ${
+    active
+      ? isDefault
+        ? 'bg-bg-hover text-text-white border border-border'
+        : 'bg-accent text-bg-primary'
+      : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
+  }`;
+
 export function SearchPage() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<AnimeSearchResult[]>([]);
@@ -177,11 +188,7 @@ export function SearchPage() {
             <div className="flex gap-1">
               <button
                 onClick={() => setSiteFilter('Tutti')}
-                className={`spec-line px-3 py-1.5 text-[11px] font-bold rounded-sm transition-colors ${
-                  siteFilter === 'Tutti'
-                    ? 'bg-accent text-bg-primary'
-                    : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
-                }`}
+                className={pillClass(siteFilter === 'Tutti', true)}
               >
                 Tutti
               </button>
@@ -189,11 +196,7 @@ export function SearchPage() {
                 <button
                   key={site}
                   onClick={() => setSiteFilter(site)}
-                  className={`spec-line px-3 py-1.5 text-[11px] font-bold rounded-sm transition-colors ${
-                    siteFilter === site
-                      ? 'bg-accent text-bg-primary'
-                      : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
-                  }`}
+                  className={pillClass(siteFilter === site)}
                 >
                   {site === 'animeunity' ? 'AnimeUnity' : site === 'animeworld' ? 'AnimeWorld' : site === 'animesaturn' ? 'AnimeSaturn' : site}
                 </button>
@@ -209,11 +212,7 @@ export function SearchPage() {
                   <button
                     key={t}
                     onClick={() => setTypeFilter(t)}
-                    className={`spec-line px-3 py-1.5 text-[11px] font-bold rounded-sm transition-colors ${
-                      typeFilter === t
-                        ? 'bg-accent text-bg-primary'
-                        : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
-                    }`}
+                    className={pillClass(typeFilter === t, t === 'Tutti')}
                   >
                     {t}
                   </button>
@@ -227,11 +226,7 @@ export function SearchPage() {
                 <button
                   key={d}
                   onClick={() => setDubFilter(d)}
-                  className={`spec-line px-3 py-1.5 text-[11px] font-bold rounded-sm transition-colors ${
-                    dubFilter === d
-                      ? 'bg-accent text-bg-primary'
-                      : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
-                  }`}
+                  className={pillClass(dubFilter === d, d === 'Tutti')}
                 >
                   {d}
                 </button>

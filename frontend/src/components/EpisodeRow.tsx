@@ -56,9 +56,9 @@ export function EpisodeRow({ episode, onDownload, onWatch, selectionMode, select
           {episode.number}
         </span>
         <div className="min-w-0 flex-1">
-          {episode.title && (
-            <p className="text-sm text-text-white truncate">{episode.title}</p>
-          )}
+          <p className={`text-sm truncate ${episode.title ? 'text-text-white' : 'text-text-secondary'}`}>
+            {episode.title || `Episodio ${episode.number}`}
+          </p>
           <div className="flex items-center gap-2 font-mono text-[11px] text-text-secondary">
             {episode.created_at && (
               <span>{formatDate(episode.created_at)}</span>
