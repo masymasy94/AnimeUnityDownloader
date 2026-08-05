@@ -130,35 +130,29 @@ export function SearchPage() {
           style={{
             background: showHero
               ? `
-                radial-gradient(ellipse 80% 50% at 70% 20%, rgba(61,180,242,0.15) 0%, transparent 60%),
-                radial-gradient(ellipse 60% 40% at 20% 60%, rgba(99,102,241,0.12) 0%, transparent 50%),
-                radial-gradient(ellipse 40% 30% at 85% 70%, rgba(168,85,247,0.10) 0%, transparent 50%),
-                linear-gradient(to bottom, #0d1b2a 0%, #0b1622 100%)
+                radial-gradient(ellipse 70% 55% at 75% 15%, rgba(51,201,176,0.16) 0%, transparent 60%),
+                radial-gradient(ellipse 50% 35% at 15% 75%, rgba(51,201,176,0.08) 0%, transparent 55%),
+                linear-gradient(to bottom, #0c131c 0%, #0a0e15 100%)
               `
-              : 'linear-gradient(to bottom, #0d1b2a 0%, #0b1622 100%)',
+              : 'linear-gradient(to bottom, #0c131c 0%, #0a0e15 100%)',
           }}
         />
+        {/* Hairline "on-air" sweep — plays once when the idle hero mounts, then rests */}
         {showHero && (
-          <>
-            <div className="absolute inset-0 opacity-[0.03]" style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%233db4f2' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-            }} />
-            <div className="absolute top-[15%] left-[10%] w-1 h-1 rounded-full bg-accent/30 animate-pulse" />
-            <div className="absolute top-[25%] right-[20%] w-0.5 h-0.5 rounded-full bg-white/20 animate-pulse" style={{ animationDelay: '1s' }} />
-            <div className="absolute top-[40%] left-[60%] w-0.5 h-0.5 rounded-full bg-accent/20 animate-pulse" style={{ animationDelay: '2s' }} />
-            <div className="absolute top-[10%] right-[35%] w-1 h-1 rounded-full bg-purple-400/20 animate-pulse" style={{ animationDelay: '0.5s' }} />
-            <div className="absolute top-[35%] left-[30%] w-0.5 h-0.5 rounded-full bg-white/15 animate-pulse" style={{ animationDelay: '1.5s' }} />
-          </>
+          <div
+            className="signal-sweep absolute inset-y-0 left-0 w-1/3 pointer-events-none"
+            style={{ background: 'linear-gradient(90deg, transparent, rgba(51,201,176,0.16), transparent)' }}
+          />
         )}
         <div className="relative z-10 flex flex-col items-center justify-center h-full px-6">
           <div className="text-center space-y-2 mb-5">
             <h1
-              className={`font-bold text-white drop-shadow-lg transition-all duration-500 ${showHero ? 'text-3xl' : 'text-lg'}`}
+              className={`font-extrabold tracking-tight text-text-white drop-shadow-lg transition-all duration-500 ${showHero ? 'text-4xl' : 'text-lg'}`}
             >
               Cerca un anime
             </h1>
             {showHero && (
-              <p className="text-gray-300 text-sm drop-shadow">
+              <p className="text-text-secondary text-sm drop-shadow">
                 Cerca, guarda e scarica da AnimeUnity, AnimeWorld e AnimeSaturn
               </p>
             )}
@@ -183,9 +177,9 @@ export function SearchPage() {
             <div className="flex gap-1">
               <button
                 onClick={() => setSiteFilter('Tutti')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-[5px] transition-colors ${
+                className={`spec-line px-3 py-1.5 text-[11px] font-bold rounded-sm transition-colors ${
                   siteFilter === 'Tutti'
-                    ? 'bg-accent text-white'
+                    ? 'bg-accent text-bg-primary'
                     : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
                 }`}
               >
@@ -195,9 +189,9 @@ export function SearchPage() {
                 <button
                   key={site}
                   onClick={() => setSiteFilter(site)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-[5px] transition-colors ${
+                  className={`spec-line px-3 py-1.5 text-[11px] font-bold rounded-sm transition-colors ${
                     siteFilter === site
-                      ? 'bg-accent text-white'
+                      ? 'bg-accent text-bg-primary'
                       : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
                   }`}
                 >
@@ -215,9 +209,9 @@ export function SearchPage() {
                   <button
                     key={t}
                     onClick={() => setTypeFilter(t)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-[5px] transition-colors ${
+                    className={`spec-line px-3 py-1.5 text-[11px] font-bold rounded-sm transition-colors ${
                       typeFilter === t
-                        ? 'bg-accent text-white'
+                        ? 'bg-accent text-bg-primary'
                         : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
                     }`}
                   >
@@ -233,9 +227,9 @@ export function SearchPage() {
                 <button
                   key={d}
                   onClick={() => setDubFilter(d)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-[5px] transition-colors ${
+                  className={`spec-line px-3 py-1.5 text-[11px] font-bold rounded-sm transition-colors ${
                     dubFilter === d
-                      ? 'bg-accent text-white'
+                      ? 'bg-accent text-bg-primary'
                       : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
                   }`}
                 >
@@ -272,7 +266,11 @@ export function SearchPage() {
       {/* Latest / In onda ora */}
       {showHero && latestData?.results && latestData.results.length > 0 && (
         <div>
-          <h2 className="text-lg font-semibold text-text-white mb-4">Ultime uscite</h2>
+          <div className="flex items-center gap-3 mb-4">
+            <h2 className="text-xl font-bold tracking-tight text-text-white">Ultime uscite</h2>
+            <div className="h-px flex-1 bg-border" />
+            <span className="spec-line text-[10px] text-text-secondary">{latestData.results.length} titoli</span>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {latestData.results.map((anime) => (
               <AnimeCard key={`${anime.source_site}-${anime.id}`} anime={anime} site={anime.source_site} />

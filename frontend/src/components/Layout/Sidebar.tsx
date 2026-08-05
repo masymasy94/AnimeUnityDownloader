@@ -68,8 +68,8 @@ export function Sidebar() {
       <div className={`flex items-center ${collapsed ? 'justify-center p-3' : 'justify-between p-5'}`}>
         {!collapsed && (
           <div className="min-w-0">
-            <h1 className="text-lg font-bold text-accent truncate">AnimeHub</h1>
-            <p className="text-[11px] text-text-secondary tracking-wide">HASASIERO</p>
+            <h1 className="text-xl font-extrabold tracking-tight text-accent truncate">AnimeHub</h1>
+            <p className="spec-line text-[10px] text-text-secondary">HASASIERO</p>
           </div>
         )}
         <button
@@ -94,10 +94,10 @@ export function Sidebar() {
             to={to}
             title={collapsed ? label : undefined}
             className={({ isActive }) =>
-              `flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-3 py-2.5 rounded-[5px] text-[13px] font-medium transition-colors relative ${
+              `flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-3 py-2.5 rounded-[5px] text-[13px] font-medium transition-colors relative border-l-2 ${
                 isActive
-                  ? 'bg-accent/15 text-accent'
-                  : 'text-text-secondary hover:text-text-white hover:bg-bg-hover'
+                  ? 'bg-accent/15 text-accent border-accent'
+                  : 'text-text-secondary hover:text-text-white hover:bg-bg-hover border-transparent'
               }`
             }
           >

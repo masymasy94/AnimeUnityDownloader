@@ -52,14 +52,14 @@ export function EpisodeRow({ episode, onDownload, onWatch, selectionMode, select
             className="w-4 h-4 accent-accent flex-shrink-0 cursor-pointer"
           />
         )}
-        <span className="text-sm font-mono text-text-secondary w-10 flex-shrink-0 text-right">
+        <span className="spec-line text-xs text-text-secondary w-10 flex-shrink-0 text-center py-1 rounded-sm bg-bg-primary/50 border border-border/60">
           {episode.number}
         </span>
         <div className="min-w-0 flex-1">
           {episode.title && (
             <p className="text-sm text-text-white truncate">{episode.title}</p>
           )}
-          <div className="flex items-center gap-2 text-[11px] text-text-secondary">
+          <div className="flex items-center gap-2 font-mono text-[11px] text-text-secondary">
             {episode.created_at && (
               <span>{formatDate(episode.created_at)}</span>
             )}
@@ -69,7 +69,7 @@ export function EpisodeRow({ episode, onDownload, onWatch, selectionMode, select
           </div>
         </div>
         {status && (
-          <span className={`text-[11px] px-2 py-0.5 rounded font-medium flex-shrink-0 ${status.className}`}>
+          <span className={`spec-line text-[10px] px-2 py-0.5 rounded-sm font-bold flex-shrink-0 ${status.className}`}>
             {status.label}
           </span>
         )}

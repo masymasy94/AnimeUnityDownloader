@@ -1,27 +1,28 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg-primary: #0b1622;
-  --color-bg-secondary: #151f2e;
-  --color-bg-card: #151f2e;
-  --color-bg-hover: #1c2b3d;
-  --color-bg-navbar: #11161d;
-  --color-accent: #3db4f2;
-  --color-accent-hover: #2d9fd9;
-  --color-text-primary: #d3d3d3;
-  --color-text-secondary: #8ba0b2;
-  --color-text-white: #ffffff;
-  --color-border: #1e2d3d;
-  --color-success: #22c55e;
-  --color-error: #ef4444;
-  --color-warning: #f59e0b;
+  --color-bg-primary: #0a0e15;
+  --color-bg-secondary: #12171f;
+  --color-bg-card: #141a23;
+  --color-bg-hover: #1c2430;
+  --color-bg-navbar: #0d1119;
+  --color-accent: #33c9b0;
+  --color-accent-hover: #28a894;
+  --color-text-primary: #d9d5c9;
+  --color-text-secondary: #838a95;
+  --color-text-white: #f3f0e8;
+  --color-border: #212934;
+  --color-success: #5fce7c;
+  --color-error: #ef5b56;
+  --color-warning: #e8a94a;
 }
 
 body {
   background-color: var(--color-bg-primary);
   color: var(--color-text-primary);
-  font-family: 'Open Sans', 'Roboto', system-ui, -apple-system, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   margin: 0;
+  font-feature-settings: 'tnum' 1;
 }
 
 ::-webkit-scrollbar {
@@ -35,4 +36,27 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
   border-radius: 4px;
+}
+
+/* Signature typographic device: short factual labels (type, year, counts,
+   statuses) set in mono, tracked-out caps — data read as data, not prose. */
+.spec-line {
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* One-shot "on-air" sweep across the search hero — plays once on mount,
+   never loops. Disabled entirely under reduced motion. */
+@keyframes signal-sweep {
+  0% { transform: translateX(-140%); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateX(140%); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .signal-sweep {
+    animation: signal-sweep 3.2s cubic-bezier(0.4, 0, 0.2, 1) 1;
+  }
 }

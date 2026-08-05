@@ -28,14 +28,14 @@ function getDirectoryPath(filePath: string): string {
   return parts.join('/');
 }
 
-const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  queued: { label: 'In coda', className: 'text-warning' },
-  downloading: { label: 'Download', className: 'text-accent' },
-  finalizing: { label: 'Spostamento su NAS', className: 'text-accent' },
-  completed: { label: 'Completato', className: 'text-success' },
-  failed: { label: 'Fallito', className: 'text-error' },
-  cancelled: { label: 'Annullato', className: 'text-text-secondary' },
-  paused: { label: 'In pausa', className: 'text-warning' },
+const STATUS_CONFIG: Record<string, { label: string; pill: string; bar: string }> = {
+  queued: { label: 'In coda', pill: 'bg-warning/15 text-warning', bar: 'bg-warning' },
+  downloading: { label: 'Download', pill: 'bg-accent/15 text-accent', bar: 'bg-accent' },
+  finalizing: { label: 'Spostamento su NAS', pill: 'bg-accent/15 text-accent', bar: 'bg-accent' },
+  completed: { label: 'Completato', pill: 'bg-success/15 text-success', bar: 'bg-success' },
+  failed: { label: 'Fallito', pill: 'bg-error/15 text-error', bar: 'bg-error' },
+  cancelled: { label: 'Annullato', pill: 'bg-bg-hover text-text-secondary', bar: 'bg-text-secondary/50' },
+  paused: { label: 'In pausa', pill: 'bg-warning/15 text-warning', bar: 'bg-warning' },
 };
 
 export function DownloadItem({ download }: DownloadItemProps) {
@@ -88,16 +88,17 @@ export function DownloadItem({ download }: DownloadItemProps) {
   };
 
   return (
-    <div className="bg-bg-secondary border border-border rounded-[5px] p-4 space-y-2">
+    <div className="relative bg-bg-secondary border border-border rounded-[5px] pl-5 pr-4 py-4 space-y-2 overflow-hidden">
+      <span className={`absolute left-0 top-0 bottom-0 w-1 ${statusConfig.bar}`} />
       <div className="flex items-start justify-between">
         <div className="min-w-0 flex-1">
-          <h4 className="text-sm font-medium truncate">{download.anime_title}</h4>
-          <p className="text-xs text-text-secondary">
+          <h4 className="text-sm font-semibold text-text-white truncate">{download.anime_title}</h4>
+          <p className="spec-line text-[11px] text-text-secondary">
             Episodio {download.episode_number}
           </p>
         </div>
         <div className="flex items-center gap-2 ml-3">
-          <span className={`text-xs font-medium ${statusConfig.className}`}>
+          <span className={`spec-line px-2 py-0.5 text-[10px] font-bold rounded-sm ${statusConfig.pill}`}>
             {statusConfig.label}
           </span>
           {download.status === 'completed' && download.file_exists && (
@@ -160,14 +161,14 @@ export function DownloadItem({ download }: DownloadItemProps) {
       {download.status === 'downloading' && (
         <>
           <ProgressBar progress={progress} />
-          <div className="flex justify-between text-xs text-text-secondary">
+          <div className="flex justify-between font-mono text-[11px] text-text-secondary">
             <span>
               {formatBytes(downloadedBytes)}
               {totalBytes > 0 && ` / ${formatBytes(totalBytes)}`}
             </span>
             <div className="flex gap-3">
               {speed > 0 && <span>{formatSpeed(speed)}</span>}
-              <span>{progress.toFixed(1)}%</span>
+              <span className="text-accent font-semibold">{progress.toFixed(1)}%</span>
             </div>
           </div>
         </>
@@ -176,7 +177,7 @@ export function DownloadItem({ download }: DownloadItemProps) {
       {isPaused && (
         <>
           <ProgressBar progress={progress} />
-          <div className="flex justify-between text-xs text-text-secondary">
+          <div className="flex justify-between font-mono text-[11px] text-text-secondary">
             <span>
               {formatBytes(downloadedBytes)}
               {totalBytes > 0 && ` / ${formatBytes(totalBytes)}`}
