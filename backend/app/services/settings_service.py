@@ -1,4 +1,5 @@
 import logging
+import os
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,7 +16,7 @@ DEFAULTS = {
     "telegram_bot_token": "",
     "telegram_chat_id": "",
     "jellyfin_url": "http://192.168.3.54:8096",
-    "jellyfin_api_key": "1053bc875c2744f79754c2586a30de45",
+    "jellyfin_api_key": os.environ.get("JELLYFIN_API_KEY", ""),
     "jellyfin_enabled": "true",
 }
 

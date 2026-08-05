@@ -1,10 +1,12 @@
 """Streaming proxy — M3U8 manifest rewriting + segment proxying."""
 
+import asyncio
 import json
 import logging
 import re
 from urllib.parse import urlencode, urljoin, quote
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
@@ -14,6 +16,25 @@ from ..services.providers import ProviderRegistry
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+RETRY_ATTEMPTS = 3
+
+
+async def _send_with_retry(
+    client: httpx.AsyncClient, request: httpx.Request, stream: bool = False
+) -> httpx.Response:
+    """Send a request, retrying transient transport errors.
+
+    CDN edges go unreachable for a minute at a time (blip, ISP-level block); without
+    this a single failed TCP connect kills playback mid-episode.
+    """
+    for attempt in range(RETRY_ATTEMPTS - 1):
+        try:
+            return await client.send(request, stream=stream)
+        except httpx.TransportError as exc:
+            logger.warning("upstream %s failed (%s), retry %d", request.url.host, exc, attempt + 1)
+            await asyncio.sleep(0.5 * 2**attempt)
+    return await client.send(request, stream=stream)
 
 
 @router.get("/stream/source/{episode_id}")
@@ -51,9 +72,11 @@ async def proxy_m3u8(
         upstream_headers = {}
 
     # Use httpx for the upstream request
-    import httpx
     async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
-        resp = await client.get(url, headers=upstream_headers)
+        try:
+            resp = await _send_with_retry(client, client.build_request("GET", url, headers=upstream_headers))
+        except httpx.TransportError as exc:
+            raise HTTPException(status_code=502, detail="Upstream unreachable") from exc
         if resp.status_code != 200:
             raise HTTPException(status_code=resp.status_code, detail="Upstream M3U8 fetch failed")
         manifest = resp.text
@@ -83,8 +106,6 @@ async def proxy_segment(
     except json.JSONDecodeError:
         upstream_headers = {}
 
-    import httpx
-
     client = httpx.AsyncClient(follow_redirects=True, timeout=120)
 
     # Forward Range header for MP4 seeking
@@ -92,10 +113,16 @@ async def proxy_segment(
     if range_header:
         upstream_headers["Range"] = range_header
 
-    resp = await client.send(
-        client.build_request("GET", url, headers=upstream_headers),
-        stream=True,
-    )
+    try:
+        resp = await _send_with_retry(
+            client,
+            client.build_request("GET", url, headers=upstream_headers),
+            stream=True,
+        )
+    except httpx.TransportError as exc:
+        await client.aclose()
+        logger.warning("segment proxy: upstream unreachable — %s", exc)
+        raise HTTPException(status_code=502, detail="Upstream unreachable") from exc
 
     if resp.status_code not in (200, 206):
         await resp.aclose()
@@ -122,10 +149,56 @@ async def proxy_segment(
     if "accept-ranges" in resp.headers:
         response_headers["Accept-Ranges"] = resp.headers["accept-ranges"]
 
+    # Original client Range (bytes=X-Y or bytes=X-), so resumes can be computed as
+    # an absolute offset and stay within whatever upper bound the client asked for.
+    # A Range we don't recognize (e.g. a suffix range "bytes=-500") means we can't
+    # safely compute a resume offset — better to not resume than to guess wrong.
+    range_match = re.match(r"bytes=(\d+)-(\d*)", range_header) if range_header else None
+    can_resume = range_match is not None if range_header else True
+    orig_start = int(range_match.group(1)) if range_match else 0
+    orig_end = int(range_match.group(2)) if range_match and range_match.group(2) else None
+
     async def stream_content():
+        nonlocal resp, client
+        sent = 0
+        resumes = 0
         try:
-            async for chunk in resp.aiter_bytes(chunk_size=65536):
-                yield chunk
+            while True:
+                try:
+                    async for chunk in resp.aiter_bytes(chunk_size=65536):
+                        sent += len(chunk)
+                        yield chunk
+                    return
+                except httpx.RemoteProtocolError as exc:
+                    if not can_resume:
+                        raise
+                    resumes += 1
+                    if resumes > RETRY_ATTEMPTS:
+                        logger.warning("segment proxy: giving up after %d resumes on %s (%s)", RETRY_ATTEMPTS, url, exc)
+                        return
+                    resume_start = orig_start + sent
+                    resume_headers = dict(upstream_headers)
+                    resume_headers["Range"] = (
+                        f"bytes={resume_start}-{orig_end}" if orig_end is not None else f"bytes={resume_start}-"
+                    )
+                    logger.warning("segment proxy: upstream dropped at byte %d, resuming (%s)", resume_start, exc)
+                    await resp.aclose()
+                    await client.aclose()
+                    client = httpx.AsyncClient(follow_redirects=True, timeout=120)
+                    try:
+                        resp = await _send_with_retry(
+                            client, client.build_request("GET", url, headers=resume_headers), stream=True
+                        )
+                    except httpx.TransportError as retry_exc:
+                        logger.warning("segment proxy: resume fetch failed (%s)", retry_exc)
+                        return
+                    if resp.status_code != 206:
+                        logger.warning(
+                            "segment proxy: resume got status %d instead of 206, aborting stream",
+                            resp.status_code,
+                        )
+                        await resp.aclose()
+                        return
         finally:
             await resp.aclose()
             await client.aclose()

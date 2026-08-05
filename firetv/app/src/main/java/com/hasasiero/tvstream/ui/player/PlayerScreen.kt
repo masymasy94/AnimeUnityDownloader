@@ -152,9 +152,19 @@ fun PlayerScreen(
                     videoEnded = true
                 }
             }
+
+            // Nothing else holds the screen awake: without this the stick sleeps
+            // mid-episode (no remote input for 20+ minutes) and playback stalls.
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                view.keepScreenOn = isPlaying
+            }
         }
         player.addListener(listener)
-        onDispose { player.removeListener(listener) }
+        view.keepScreenOn = player.isPlaying
+        onDispose {
+            player.removeListener(listener)
+            view.keepScreenOn = false
+        }
     }
 
     // Fallback: detect end-of-video by position when STATE_ENDED doesn't fire

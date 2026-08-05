@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
+import zlib
 
 from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
@@ -67,7 +68,9 @@ class AnimeSaturnProvider(SiteProvider):
             name = item.get("name", "Senza titolo")
             image = item.get("image", "")
 
-            anime_id = abs(hash(link)) % 10_000_000
+            # Stable ID from slug hash (zlib.crc32, not hash() — the latter is
+            # randomized per-process via PYTHONHASHSEED)
+            anime_id = zlib.crc32(link.encode()) % 10_000_000
 
             # Infer type from title
             anime_type = "TV"
@@ -126,7 +129,9 @@ class AnimeSaturnProvider(SiteProvider):
             title_el = card.select_one(".info-archivio h3 a, a.name, .title")
             title_text = title_el.get_text(strip=True) if title_el else link_el.get_text(strip=True)
 
-            anime_id = abs(hash(slug)) % 10_000_000
+            # Stable ID from slug hash (zlib.crc32, not hash() — the latter is
+            # randomized per-process via PYTHONHASHSEED)
+            anime_id = zlib.crc32(slug.encode()) % 10_000_000
 
             results.append(
                 AnimeSearchResult(
@@ -227,7 +232,7 @@ class AnimeSaturnProvider(SiteProvider):
             ep_num = ep_match.group(1) if ep_match else ep_el.get_text(strip=True)
 
             # Use a stable ID from the episode URL
-            ep_id = abs(hash(href)) % 10_000_000
+            ep_id = zlib.crc32(href.encode()) % 10_000_000
 
             episodes.append(
                 Episode(
@@ -240,7 +245,7 @@ class AnimeSaturnProvider(SiteProvider):
         self._episode_urls: dict[int, str] = {}
         for ep_el in soup.select("a.bottone-ep"):
             href = ep_el.get("href", "")
-            ep_id = abs(hash(href)) % 10_000_000
+            ep_id = zlib.crc32(href.encode()) % 10_000_000
             self._episode_urls[ep_id] = href
 
         total = len(episodes)

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+import zlib
 
 from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
@@ -172,8 +173,9 @@ class AnimeWorldProvider(SiteProvider):
             slug_match = re.search(r"/play/(.+?)(?:/|$)", href)
             slug = slug_match.group(1) if slug_match else ""
 
-            # Stable ID from slug hash
-            anime_id = abs(hash(slug)) % 10_000_000
+            # Stable ID from slug hash (zlib.crc32, not hash() — the latter is
+            # randomized per-process via PYTHONHASHSEED)
+            anime_id = zlib.crc32(slug.encode()) % 10_000_000
 
             img = card.select_one("img")
             cover_url = img.get("src") if img else None
@@ -271,7 +273,7 @@ class AnimeWorldProvider(SiteProvider):
                 try:
                     ep_id = int(ep_id_str)
                 except ValueError:
-                    ep_id = abs(hash(ep_id_str)) % 10_000_000
+                    ep_id = zlib.crc32(ep_id_str.encode()) % 10_000_000
 
                 # The player/download endpoint needs the alphanumeric link id (data-id,
                 # e.g. "Dinwg"), NOT the numeric data-episode-id. Cache the mapping so

@@ -8,6 +8,7 @@ from .metadata_service import MetadataService
 from .providers import ProviderRegistry
 from .providers.base import VideoSource
 from ..utils.filename import episode_filename, extract_season
+from ..utils.safe_path import PathOutsideBaseError, resolve_inside
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,53 @@ STALL_TIMEOUT = 60  # seconds with no data before we consider the stream dead
 # HLS segment retry
 MAX_SEGMENT_RETRIES = 3
 SEGMENT_RETRY_DELAY = 3  # seconds
+
+
+def resolve_episode_relative_path(
+    anime_title: str,
+    episode_number: str,
+    total_episodes: int = 100,
+    episode_title: str | None = None,
+    dest_folder_override: str | None = None,
+    filename_template: str | None = None,
+    filename_template_type: str | None = None,
+) -> Path:
+    """Compute the episode's output path, relative to the download root.
+
+    Single source of truth for the layout rules described in
+    ``DownloadWorker.download_episode``, so the cleanup code in
+    ``DownloadService`` can locate the same file the worker wrote instead of
+    re-deriving (and potentially diverging from) the path itself.
+    """
+    from ..utils.pattern import PatternInputs, render_filename
+
+    use_override = (
+        dest_folder_override is not None
+        and filename_template is not None
+        and filename_template_type is not None
+    )
+    if use_override:
+        show_name, season = extract_season(anime_title)
+        rendered = render_filename(
+            template=filename_template,
+            template_type=filename_template_type,
+            inputs=PatternInputs(
+                anime_title=show_name,
+                season=season,
+                episode_number=episode_number,
+                episode_title=episode_title,
+                total_episodes=total_episodes,
+                extension="mp4",
+            ),
+        )
+        return Path(dest_folder_override.lstrip("/")) / rendered
+
+    relative_path = episode_filename(
+        anime_title, episode_number, total_episodes, episode_title
+    )
+    if dest_folder_override:
+        return Path(dest_folder_override.lstrip("/")) / relative_path
+    return Path(relative_path)
 
 
 class DownloadWorker:
@@ -71,46 +119,27 @@ class DownloadWorker:
         no custom pattern), the standard Plex-style layout is rerooted under that
         folder: ``download_dir / dest_folder_override / Show/Season NN/...``.
         """
-        from ..utils.pattern import PatternInputs, render_filename
-
         # Resolve video URL just-in-time via the appropriate site provider
         provider = self._registry.get(source_site)
         source = await provider.resolve_download_url(episode_id)
 
         # Determine file path
-        use_override = (
-            dest_folder_override is not None
-            and filename_template is not None
-            and filename_template_type is not None
+        relative_path = resolve_episode_relative_path(
+            anime_title=anime_title,
+            episode_number=episode_number,
+            total_episodes=total_episodes,
+            episode_title=episode_title,
+            dest_folder_override=dest_folder_override,
+            filename_template=filename_template,
+            filename_template_type=filename_template_type,
         )
-        if use_override:
-            show_name, season = extract_season(anime_title)
-            rendered = render_filename(
-                template=filename_template,
-                template_type=filename_template_type,
-                inputs=PatternInputs(
-                    anime_title=show_name,
-                    season=season,
-                    episode_number=episode_number,
-                    episode_title=episode_title,
-                    total_episodes=total_episodes,
-                    extension="mp4",
-                ),
-            )
-            rel_folder = dest_folder_override.lstrip("/")
-            final_path = download_dir / rel_folder / rendered
-        else:
-            relative_path = episode_filename(
-                anime_title, episode_number, total_episodes, episode_title
-            )
-            # A bare dest_folder_override (no template) reroots the standard
-            # Plex layout under the chosen folder — used by web downloads that
-            # let the user pick a destination without a custom filename pattern.
-            if dest_folder_override:
-                rel_folder = dest_folder_override.lstrip("/")
-                final_path = download_dir / rel_folder / relative_path
-            else:
-                final_path = download_dir / relative_path
+        # Reject any dest_folder_override that would escape download_dir (e.g. via
+        # "../"). resolve_episode_relative_path only lstrip()s leading slashes, so
+        # containment must be verified here, at the point the path is written.
+        try:
+            final_path = resolve_inside(download_dir, str(relative_path))
+        except PathOutsideBaseError as exc:
+            raise DownloadError(f"Destination folder escapes download root: {exc}") from exc
         final_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Download based on source type

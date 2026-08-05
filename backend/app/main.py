@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from .config import settings
 from .database import async_session, init_db
+from .utils.safe_path import PathOutsideBaseError, resolve_inside
 from .services.animeunity_client import AnimeUnityClient
 from .services.download_service import DownloadService
 from .services.metadata_service import MetadataService
@@ -146,8 +147,11 @@ async def health():
 if STATIC_EXISTS:
     @app.get("/{full_path:path}")
     async def serve_spa(request: Request, full_path: str):
-        file_path = STATIC_DIR / full_path
-        if full_path and file_path.is_file():
+        try:
+            file_path = resolve_inside(STATIC_DIR, full_path)
+        except PathOutsideBaseError:
+            file_path = None
+        if full_path and file_path is not None and file_path.is_file():
             return FileResponse(file_path)
         index = STATIC_DIR / "index.html"
         if index.is_file():

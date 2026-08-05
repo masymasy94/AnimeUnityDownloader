@@ -14,7 +14,7 @@ from ..models.download import Download
 from ..models.setting import Setting
 from ..schemas.download import DownloadRequest
 from .animeclick_service import AnimeClickService
-from .download_worker import DownloadWorker
+from .download_worker import DownloadWorker, resolve_episode_relative_path
 from .jellyfin_service import JellyfinService
 from .metadata_service import MetadataService
 from .nas_queue import NasIOQueue
@@ -22,6 +22,7 @@ from .nfo_service import write_episode_nfo, write_tvshow_nfo
 from .providers import ProviderRegistry
 from .ws_manager import WebSocketManager
 from ..utils.filename import extract_season
+from ..utils.safe_path import PathOutsideBaseError, resolve_inside
 
 logger = logging.getLogger(__name__)
 
@@ -673,7 +674,14 @@ class DownloadService:
             retry_count = dl_info["retry_count"]
 
             # Clean up partial files from local temp
-            self._cleanup_partial_files(dl_info["anime_title"], dl_info["episode_number"])
+            self._cleanup_partial_files(
+                dl_info["anime_title"],
+                dl_info["episode_number"],
+                episode_title=dl_info["episode_title"],
+                dest_folder_override=dl_info["dest_folder_override"],
+                filename_template=dl_info["filename_template"],
+                filename_template_type=dl_info["filename_template_type"],
+            )
 
             if retry_count < MAX_AUTO_RETRIES:
                 next_retry = retry_count + 1
@@ -732,14 +740,36 @@ class DownloadService:
                     "error_message": error_msg,
                 })
 
-    def _cleanup_partial_files(self, anime_title: str, episode_number: str) -> None:
-        """Remove .part and .raw partial files left by a failed download."""
-        from ..utils.filename import episode_filename
+    def _cleanup_partial_files(
+        self,
+        anime_title: str,
+        episode_number: str,
+        episode_title: str | None = None,
+        dest_folder_override: str | None = None,
+        filename_template: str | None = None,
+        filename_template_type: str | None = None,
+    ) -> None:
+        """Remove .part and .raw partial files left by a failed download.
 
+        Recomputes the same path the worker wrote to (via
+        ``resolve_episode_relative_path``) instead of assuming the plain
+        Plex layout, so scheduled downloads with a folder/filename override
+        get cleaned up too. Never deletes outside ``self._local_temp``.
+        """
         try:
-            relative_path = episode_filename(anime_title, episode_number, 100)
-            # Clean from local temp (where downloads happen now)
-            base_path = self._local_temp / relative_path
+            relative_path = resolve_episode_relative_path(
+                anime_title=anime_title,
+                episode_number=episode_number,
+                episode_title=episode_title,
+                dest_folder_override=dest_folder_override,
+                filename_template=filename_template,
+                filename_template_type=filename_template_type,
+            )
+            try:
+                base_path = resolve_inside(self._local_temp, str(relative_path))
+            except PathOutsideBaseError as exc:
+                logger.warning("Cleanup path escapes local temp dir, skipping: %s", exc)
+                return
             parent = base_path.parent
 
             if not parent.exists():
