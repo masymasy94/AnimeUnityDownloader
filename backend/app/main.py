@@ -16,7 +16,6 @@ from .services.nas_queue import NasIOQueue
 from .services.providers import ProviderRegistry
 from .services.providers.animeunity_provider import AnimeUnityProvider
 from .services.providers.animeworld_provider import AnimeWorldProvider
-from .services.providers.animesaturn_provider import AnimeSaturnProvider
 from .services.settings_service import SettingsService
 from .services.notification_service import NotificationService
 from .services.jellyfin_service import JellyfinService
@@ -52,7 +51,8 @@ async def lifespan(app: FastAPI):
     registry = ProviderRegistry()
     registry.register(AnimeUnityProvider())
     registry.register(AnimeWorldProvider())
-    registry.register(AnimeSaturnProvider())
+    # animesaturn rimosso: sito migrato interamente (dominio .cx→.net, ricerca
+    # /index.php→/filter, video dietro embed play.saturncdn) — provider da riscrivere.
 
     # Create services and store in app.state for dependency injection
     client = AnimeUnityClient()

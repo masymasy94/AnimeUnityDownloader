@@ -159,7 +159,7 @@ export function SearchPage() {
             </h1>
             {showHero && (
               <p className="text-gray-300 text-sm drop-shadow">
-                Cerca, guarda e scarica da AnimeUnity, AnimeWorld e AnimeSaturn
+                Cerca, guarda e scarica da AnimeUnity e AnimeWorld
               </p>
             )}
           </div>
@@ -201,7 +201,7 @@ export function SearchPage() {
                       : 'bg-bg-secondary text-text-secondary hover:text-text-white border border-border'
                   }`}
                 >
-                  {site === 'animeunity' ? 'AnimeUnity' : site === 'animeworld' ? 'AnimeWorld' : site === 'animesaturn' ? 'AnimeSaturn' : site}
+                  {site === 'animeunity' ? 'AnimeUnity' : site === 'animeworld' ? 'AnimeWorld' : site}
                 </button>
               ))}
             </div>

@@ -18,22 +18,36 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 RETRY_ATTEMPTS = 3
+# CDN edges answer 503 "temporarily unavailable" on a signed URL that returns 206
+# seconds later — retry those like a transport error so a seek landing during one
+# blip doesn't surface as a hard, playback-killing error.
+RETRYABLE_STATUS = frozenset({502, 503, 504})
 
 
 async def _send_with_retry(
     client: httpx.AsyncClient, request: httpx.Request, stream: bool = False
 ) -> httpx.Response:
-    """Send a request, retrying transient transport errors.
+    """Send a request, retrying transient failures: transport errors and 5xx blips.
 
-    CDN edges go unreachable for a minute at a time (blip, ISP-level block); without
-    this a single failed TCP connect kills playback mid-episode.
+    CDN edges go unreachable for a minute at a time (blip, ISP-level block) and also
+    answer transient 503s on the same signed URL; without this a single failed connect
+    or a 503 during a seek kills playback mid-episode.
     """
+    # ponytail: ~1.5s total retry budget (0.5s+1s backoff) — bridges short CDN blips,
+    # not a multi-minute outage; raise RETRY_ATTEMPTS if real blips run longer.
     for attempt in range(RETRY_ATTEMPTS - 1):
         try:
-            return await client.send(request, stream=stream)
+            resp = await client.send(request, stream=stream)
         except httpx.TransportError as exc:
             logger.warning("upstream %s failed (%s), retry %d", request.url.host, exc, attempt + 1)
             await asyncio.sleep(0.5 * 2**attempt)
+            continue
+        if resp.status_code in RETRYABLE_STATUS:
+            await resp.aclose()
+            logger.warning("upstream %s returned %d, retry %d", request.url.host, resp.status_code, attempt + 1)
+            await asyncio.sleep(0.5 * 2**attempt)
+            continue
+        return resp
     return await client.send(request, stream=stream)
 
 
