@@ -22,6 +22,11 @@ RETRY_ATTEMPTS = 3
 # seconds later — retry those like a transport error so a seek landing during one
 # blip doesn't surface as a hard, playback-killing error.
 RETRYABLE_STATUS = frozenset({502, 503, 504})
+# A seek far ahead lands on a byte range the edge hasn't warmed from origin yet; it
+# answers 503 for *tens of seconds* (observed ~35s across edges, even on a fresh
+# token) until that range is ready. A ~1.5s budget gives up mid-warmup and kills
+# playback, so bridge the whole window with capped backoff.
+SEND_RETRY_MAX_SECONDS = 40.0
 
 
 async def _send_with_retry(
@@ -31,24 +36,30 @@ async def _send_with_retry(
 
     CDN edges go unreachable for a minute at a time (blip, ISP-level block) and also
     answer transient 503s on the same signed URL; without this a single failed connect
-    or a 503 during a seek kills playback mid-episode.
+    or a 503 during a seek kills playback mid-episode. Retries for up to
+    SEND_RETRY_MAX_SECONDS with capped exponential backoff so a far seek becomes a
+    buffering pause, not a dead player: the browser holds the range request open the
+    whole time and resumes on its own once the edge finally serves the 206.
     """
-    # ponytail: ~1.5s total retry budget (0.5s+1s backoff) — bridges short CDN blips,
-    # not a multi-minute outage; raise RETRY_ATTEMPTS if real blips run longer.
-    for attempt in range(RETRY_ATTEMPTS - 1):
+    # ponytail: capped-backoff time budget (0.5,1,2,4,8,8,… up to ~40s). Bridges an
+    # edge warming a cold byte range; still bounded so a genuine outage fails cleanly.
+    delay, waited = 0.5, 0.0
+    while True:
+        over_budget = waited >= SEND_RETRY_MAX_SECONDS
         try:
             resp = await client.send(request, stream=stream)
         except httpx.TransportError as exc:
-            logger.warning("upstream %s failed (%s), retry %d", request.url.host, exc, attempt + 1)
-            await asyncio.sleep(0.5 * 2**attempt)
-            continue
-        if resp.status_code in RETRYABLE_STATUS:
+            if over_budget:
+                raise
+            logger.warning("upstream %s failed (%s), retry in %.1fs", request.url.host, exc, delay)
+        else:
+            if resp.status_code not in RETRYABLE_STATUS or over_budget:
+                return resp
             await resp.aclose()
-            logger.warning("upstream %s returned %d, retry %d", request.url.host, resp.status_code, attempt + 1)
-            await asyncio.sleep(0.5 * 2**attempt)
-            continue
-        return resp
-    return await client.send(request, stream=stream)
+            logger.warning("upstream %s returned %d, retry in %.1fs", request.url.host, resp.status_code, delay)
+        await asyncio.sleep(delay)
+        waited += delay
+        delay = min(delay * 2, 8.0)
 
 
 @router.get("/stream/source/{episode_id}")
